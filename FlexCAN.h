@@ -103,6 +103,7 @@ class FlexCAN
 {
 private:
   uint32_t flexcanBase;
+
   struct CAN_filter_t MBFilters[NUM_MAILBOXES];
   static struct CAN_filter_t defaultMask;
   void mailbox_int_handler (uint8_t mb, uint32_t ul_status);
@@ -112,6 +113,7 @@ private:
   volatile CAN_message_t tx_buffer[SIZE_TX_BUFFER];
   ringbuffer_t rxRing;
   volatile CAN_message_t rx_buffer[SIZE_RX_BUFFER];
+
 
   void writeTxRegisters (const CAN_message_t &msg, uint8_t buffer);
   void readRxRegisters (CAN_message_t &msg, uint8_t buffer);
@@ -141,6 +143,7 @@ public:
   int write (const CAN_message_t &msg);
   int read (CAN_message_t &msg);
   uint32_t rxBufferOverruns (void) { return stats.ringRxFramesLost; };
+  uint8_t readRxError(void);
 
 #ifdef COLLECT_CAN_STATS
   void startStats (void) { stats.enabled = true; };

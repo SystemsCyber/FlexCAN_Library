@@ -373,7 +373,7 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
 #endif
 
     // enable interrupt masks for all 16 mailboxes
-
+    // Why not 32?
     FLEXCANb_IMASK1 (flexcanBase) = 0xFFFF;
 
     dbg_println ("CAN initialized properly");
@@ -472,8 +472,7 @@ void FlexCAN::setFilter (const CAN_filter_t &filter, uint8_t mbox)
            FLEXCANb_MBn_ID(flexcanBase, mbox) = (filter.id & FLEXCAN_MB_ID_EXT_MASK);
            FLEXCANb_MBn_CS(flexcanBase, mbox) |= FLEXCAN_MB_CS_IDE;
         } else {
-           //FLEXCANb_MBn_ID(flexcanBase, mbox) = FLEXCAN_MB_ID_IDSTD(filter.id);
-           FLEXCANb_MBn_ID(flexcanBase, mbox) = FLEXCAN_MB_ID_IDSTD(filter.id & FLEXCAN_MB_ID_EXT_MASK);
+           FLEXCANb_MBn_ID(flexcanBase, mbox) = FLEXCAN_MB_ID_IDSTD(filter.id);
            FLEXCANb_MBn_CS(flexcanBase, mbox) &= ~FLEXCAN_MB_CS_IDE;
         }
     }
@@ -685,6 +684,19 @@ void FlexCAN::writeTxRegisters (const CAN_message_t &msg, uint8_t buffer)
 }
 
 /*
+ * \brief Read CAN Error counts
+ *
+ * \retval Receive error counter CANx_ECR.
+ *
+ */
+
+uint8_t FlexCAN::readRxError ()
+{
+    //load the correct memory location
+    uint32_t ecr_CS = FLEXCANb_ECR(flexcanBase);
+    return FLEXCAN_get_RX_ERR_COUNTER (ecr_CS);
+}
+/*
  * \brief Read CAN message from the FlexCAN hardware registers.
  *
  * \param msg    - message structure to fill.
@@ -701,8 +713,8 @@ void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
     // get identifier and dlc
 
     msg.len = FLEXCAN_get_length (mb_CS);
-    msg.flags.extended = (mb_CS & FLEXCAN_MB_CS_IDE) ? 1:0;
-    msg.flags.remote = (mb_CS & FLEXCAN_MB_CS_RTR) ? 1:0;
+    msg.flags.extended = FLEXCAN_get_IDE (mb_CS);
+    msg.flags.remote = FLEXCAN_get_RTR (mb_CS);
     msg.timestamp = FLEXCAN_get_timestamp (mb_CS);
     msg.flags.overrun = 0;
     msg.flags.reserved = 0;
@@ -741,7 +753,7 @@ void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
         msg.buf[4] = dataIn;
     }
  
-    for (uint32_t loop=msg.len; loop < 8; loop++ ) {
+    for (uint8_t loop=msg.len; loop < 8; loop++ ) {
         msg.buf[loop] = 0;
     }
 }
@@ -879,8 +891,7 @@ uint32_t FlexCAN::ringBufferCount (ringbuffer_t &ring)
 void FlexCAN::message_isr (void)
 {
     uint32_t status = FLEXCANb_IFLAG1(flexcanBase);
-    uint8_t controller = 0;
-    uint32_t i;
+    uint8_t i;
     CAN_message_t msg;
     bool handledFrame;
     CANListener *thisListener;
@@ -889,7 +900,7 @@ void FlexCAN::message_isr (void)
 #endif
 
     // determine which controller we're servicing
-
+    uint8_t controller = 0;  
 #if defined (INCLUDE_FLEXCAN_CAN1)
     if (flexcanBase == FLEXCAN1_BASE)
         controller = 1;
@@ -904,6 +915,8 @@ void FlexCAN::message_isr (void)
         if ((status & (1 << i)) == 0) {
             continue;
         }
+        
+        bool extended = FLEXCAN_get_IDE (FLEXCANb_MBn_CS(flexcanBase, i));
 
         // examine the reason the mailbox interrupted us
 
@@ -934,9 +947,7 @@ void FlexCAN::message_isr (void)
               thisListener = listener[listenerPos];
 
               // process active listeners
-
               if (thisListener != NULL) {
-
                   // call the handler if it's active for this mailbox
                 if (thisListener->callbacksActive & (0x80000000)) {
                   handledFrame |= thisListener->frameHandler (msg, 255, controller);
@@ -1342,9 +1353,9 @@ bool CANListener::frameHandler (CAN_message_t &frame, int8_t mailbox, uint8_t co
 {
 
     /* default implementation that doesn't handle frames */
-    printFrame(frame, mailbox, controller);
+    // printFrame(frame, mailbox, controller);
     //logFrame(frame, mailbox, controller);
-    return (true);
+    // return (true);
     /* default implementation that doesn't handle frames */
     return (false);
 }

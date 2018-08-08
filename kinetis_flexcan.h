@@ -376,8 +376,13 @@ typedef volatile uint32_t vuint32_t;
 #define FLEXCAN_RX15MASK_MI31          (0x80000000)
 
 /* Bit definitions and macros for FLEXCAN_ECR */
-#define FLEXCAN_ECR_TX_ERR_COUNTER(x)  (((x)&0x000000FF)<<0)
-#define FLEXCAN_ECR_RX_ERR_COUNTER(x)  (((x)&0x000000FF)<<8)
+#define FLEXCAN_ECR_TX_ERR_COUNTER(x)   (((x)&0x000000FF)<<0)
+#define FLEXCAN_ECR_TX_ERR_COUNTER_MASK (0x000000FF)
+#define FLEXCAN_get_TX_ERR_COUNTER(cs)  (((cs) & FLEXCAN_ECR_TX_ERR_COUNTER_MASK)>>0)
+
+#define FLEXCAN_ECR_RX_ERR_COUNTER(x)   (((x)&0x000000FF)<<8)
+#define FLEXCAN_ECR_RX_ERR_COUNTER_MASK (0x0000FF00)
+#define FLEXCAN_get_RX_ERR_COUNTER(cs)  (((cs) & FLEXCAN_ECR_RX_ERR_COUNTER_MASK)>>8)
 
 /* Bit definitions and macros for FLEXCAN_ESR1 */
 #define FLEXCAN_ESR_WAK_INT            (0x00000001)
@@ -486,7 +491,9 @@ typedef volatile uint32_t vuint32_t;
 #define FLEXCAN_MB_CS_TIMESTAMP_MASK       (0x0000FFFFL)
 #define FLEXCAN_MB_CS_LENGTH(x)            (((x)&0x0000000F)<<16)
 #define FLEXCAN_MB_CS_RTR                  (0x00100000)
+#define FLEXCAN_MB_CS_RTR_MASK             (0x00100000)
 #define FLEXCAN_MB_CS_IDE                  (0x00200000)
+#define FLEXCAN_MB_CS_IDE_MASK             (0x00200000)
 #define FLEXCAN_MB_CS_SRR                  (0x00400000)
 #define FLEXCAN_MB_CS_CODE(x)              (((x)&0x0000000F)<<24)
 #define FLEXCAN_MB_CS_CODE_MASK		       (0x0F000000L)
@@ -507,6 +514,8 @@ typedef volatile uint32_t vuint32_t;
 #define FLEXCAN_MB_CODE_TX_RESPONSE	       (0x0A)
 #define FLEXCAN_MB_CODE_TX_RESPONSE_TEMPO  (0x0E)
 #define FLEXCAN_get_code(cs)			   (((cs) & FLEXCAN_MB_CS_CODE_MASK)>>24)
+#define FLEXCAN_get_IDE(cs)			       (((cs) & FLEXCAN_MB_CS_IDE_MASK)>>21)
+#define FLEXCAN_get_RTR(cs)			       (((cs) & FLEXCAN_MB_CS_RTR_MASK)>>20)
 #define FLEXCAN_get_length(cs)             (((cs) & FLEXCAN_MB_CS_DLC_MASK)>>16)
 #define FLEXCAN_get_timestamp(cs)          (((cs) & FLEXCAN_MB_CS_TIMESTAMP_MASK)>>0)
 
