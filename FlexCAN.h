@@ -2,6 +2,8 @@
 // a simple Arduino Teensy 3.1/3.2/3.6 CAN driver
 // by teachop
 // dual CAN support for MK66FX1M0 by Pawelsky
+// Other additions by Collin Kidder
+// 
 //
 #ifndef __FLEXCAN_H__
 #define __FLEXCAN_H__
@@ -9,11 +11,11 @@
 #include <Arduino.h>
 
 #if !defined(SIZE_RX_BUFFER)
-#define SIZE_RX_BUFFER  32 // receive incoming ring buffer size
+#define SIZE_RX_BUFFER  1028 // receive incoming ring buffer size
 #endif
 
 #if !defined(SIZE_TX_BUFFER)
-#define SIZE_TX_BUFFER  16 // transmit ring buffer size
+#define SIZE_TX_BUFFER  64 // transmit ring buffer size
 #endif
 
 #define SIZE_LISTENERS  4  // number of classes that can register as listeners on each CAN bus
@@ -29,7 +31,8 @@ typedef struct CAN_message_t {
     uint8_t extended:1; // identifier is extended (29-bit)
     uint8_t remote:1;   // remote transmission request packet type
     uint8_t overrun:1;  // message overrun
-    uint8_t reserved:5;
+    uint8_t error:1;  // message overrun
+    uint8_t reserved:4;
   } flags;
   uint8_t len;          // length of data
   uint8_t buf[8];
@@ -78,12 +81,15 @@ class CANListener
 public:
   CANListener ();
 
-  virtual bool frameHandler (CAN_message_t &frame, int mailbox, uint8_t controller);
+  virtual bool frameHandler (CAN_message_t &frame, int8_t mailbox, uint8_t controller);
+  virtual void printFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller);
+  virtual void logFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller);
 
-  void attachMBHandler (uint8_t mailBox);
-  void detachMBHandler (uint8_t mailBox);
+  void attachMBHandler (int8_t mailbox);
+  void detachMBHandler (int8_t mailbox);
   void attachGeneralHandler (void);
   void detachGeneralHandler (void);
+  
 
 private:
   uint32_t callbacksActive; // bitfield indicating which callbacks are installed (for object oriented callbacks only)
@@ -143,12 +149,12 @@ public:
   CAN_stats_t getStats (void) { return stats; };
 #endif
 
-  //new functionality added to header but not yet implemented. Fix me
   void setListenOnly (bool mode); //pass true to go into listen only mode, false to be in normal mode
 
   bool attachObj (CANListener *listener);
   bool detachObj (CANListener *listener);
 
+  //new functionality added to header but not yet implemented. Fix me
   //int watchFor(); //allow anything through
   //int watchFor(uint32_t id); //allow just this ID through (automatic determination of extended status)
   //int watchFor(uint32_t id, uint32_t mask); //allow a range of ids through

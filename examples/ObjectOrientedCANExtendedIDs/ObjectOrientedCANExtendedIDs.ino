@@ -2,7 +2,7 @@
  * Object Oriented CAN example for Teensy 3.6 with Dual CAN buses 
  * By Collin Kidder. Based upon the work of Pawelsky and Teachop
  * 
- * Both buses are set to 500k to show things with a faster bus.
+ *
  * The reception of frames in this example is done via callbacks
  * to an object rather than polling. Frames are delivered as they come in.
  */
@@ -13,95 +13,97 @@
   #error "Teensy 3.6 with dual CAN bus is required to run this example"
 #endif
 
-static CAN_message_t msg0,msg1;
-
-elapsedMillis RXtimer;
-elapsedMillis LEDtimer;
-uint32_t RXCount = 0;
-boolean displayCAN = true;
-const uint8_t redLEDpin = 2;
-boolean redLEDstate;
-
-class CANClass : public CANListener 
+// Create a new class to define functions in the CANListener class in FlexCAN.cpp
+class CANPrinter : public CANListener 
 {
 public:
-   void printFrame(CAN_message_t &frame, int mailbox);
-   bool frameHandler(CAN_message_t &frame, int mailbox, uint8_t controller); //overrides the parent version so we can actually do something
+   //overrides the parent version so we can actually do something
+   void printFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller);
+   void logFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller);
+   bool frameHandler(CAN_message_t &frame, int8_t mailbox, uint8_t controller); 
 };
 
-void CANClass::printFrame(CAN_message_t &frame, int mailbox)
+void CANPrinter::printFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller)
 {
-  if(displayCAN){
-   Serial.print(mailbox);
-   Serial.print(" ID: ");
-   Serial.print(frame.id, HEX);
-   Serial.print(" Data: ");
-   for (int c = 0; c < frame.len; c++) 
-   {
-      Serial.print(frame.buf[c], HEX);
-      Serial.write(' ');
-   }
-   Serial.println();
-  }
-   RXCount++;
- 
+    // This function can't keep up with a fully loaded CAN bus.
+    char message[19];
+    if (mailbox < 0){
+      sprintf(message, "%5d Can%d", frame.timestamp, controller);   
+    }
+    else {
+      sprintf(message, "%5d Can%d (%d)", frame.timestamp, controller, mailbox);
+    }
+    Serial.print(message);
+
+    if (frame.flags.extended){
+      sprintf(message, "  %08X   [%d] ", frame.id, frame.len);
+    }
+    else {
+      sprintf(message, "  %03X   [%d] ", frame.id, frame.len);
+    }
+    Serial.print(message);
+    char byteStr[5];
+    for (uint8_t c = 0; c < frame.len; c++) 
+    {
+       sprintf(byteStr, " %02X", frame.buf[c]); 
+       Serial.print(byteStr);
+    }
+    Serial.println();
 }
 
-bool CANClass::frameHandler(CAN_message_t &frame, int mailbox, uint8_t controller)
+void CANPrinter::logFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller)
 {
-    printFrame(frame, mailbox);
+  //Add code to log data here.
+  
+}
 
+bool CANPrinter::frameHandler(CAN_message_t &frame, int8_t mailbox, uint8_t controller)
+{
+    // This function can't keep up with a fully loaded CAN bus
+    // A fully loaded bus may crash the Teensy when filling the serial buffer
+    printFrame(frame, mailbox, controller);
+
+    // be sure to return true to tell the library that you've processed the frame.
+    // Otherwise, the data goes into a ringbuffer and waits to be read. 
     return true;
 }
 
-CANClass CANClass0;
-CANClass CANClass1;
+CANPrinter canPrinter;
+
 
 // -------------------------------------------------------------
 void setup(void)
 {
-  delay(1000);
   Serial.println(F("Hello Teensy 3.6 dual CAN Test With Objects."));
-  pinMode(redLEDpin,OUTPUT);
-  
-  Can0.begin(1000000);  
-  Can1.begin(1000000);
-  Can0.attachObj(&CANClass0);
-  Can1.attachObj(&CANClass1);
-  
-  
-  CAN_filter_t allPassFilter;
-  allPassFilter.id=0;
-  allPassFilter.ext=1;
-  allPassFilter.rtr=0;
 
-  //leave the first 4 mailboxes to use the default filter. Just change the higher ones
-  for (uint8_t filterNum = 4; filterNum < 16;filterNum++){
-    Can0.setFilter(allPassFilter,filterNum); 
-    Can1.setFilter(allPassFilter,filterNum); 
+  // Options for a Detroit Diesel CPC4
+  Can0.begin(250000);  
+  Can1.begin(666666);
+  Can0.attachObj(&canPrinter);
+  Can1.attachObj(&canPrinter);
+
+  CAN_filter_t extendedPassFilter;
+  extendedPassFilter.id=0;
+  extendedPassFilter.flags.extended=1;
+
+  // Give a few mailboxes the ability to read extended IDs
+  for (uint8_t filterNum = 4; filterNum < 8; filterNum++){
+    Can0.setFilter(extendedPassFilter,filterNum); 
+    Can1.setFilter(extendedPassFilter,filterNum); 
   }
-  for (uint8_t filterNum = 0; filterNum < 16;filterNum++){
-     CANClass0.attachMBHandler(filterNum);
-     CANClass1.attachMBHandler(filterNum);
-  }
-  //CANClass0.attachGeneralHandler();
-  //CANClass1.attachGeneralHandler();
   
+  //Set up all the mailbox handlers
+  for (uint8_t mailbox = 0; mailbox < NUM_MAILBOXES; mailbox++){
+     canPrinter.attachMBHandler(mailbox);
+  }
+  // Alternatively, you can use the general handler, but this won't accept mixed
+  // extended and standard ID frames.
+  //CANClass0.attachGeneralHandler();
 }
 
 // -------------------------------------------------------------
 void loop(void)
 {
-  if (RXtimer > 10000){
-    Serial.println("Total Received Messages in 10 Sec:");
-    Serial.println(RXCount);
-    RXtimer = 0;
-    RXCount=0;
-    displayCAN = !displayCAN;
-  }
-  if (LEDtimer >250){
-    LEDtimer = 0;
-    redLEDstate = !redLEDstate;
-    digitalWrite(redLEDpin, redLEDstate);
-  }
 }
+
+

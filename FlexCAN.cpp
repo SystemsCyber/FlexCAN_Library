@@ -4,30 +4,41 @@
 // dual CAN support for MK66FX1M0 and updates for MK64FX512 by Pawelsky
 // Interrupt driven Rx/Tx with buffers, object oriented callbacks by Collin Kidder
 // RTR related code by H4nky84
-// Statistics collection, timestamp and code clean-up my mdapoz
+// Statistics collection, timestamp and code clean-up by mdapoz
+// Error handling
 //
+#include <stdio.h>
 #include "FlexCAN.h"
 #include "kinetis_flexcan.h"
 
 #define FLEXCANb_MCR(b)                   (*(vuint32_t*)(b))
-#define FLEXCANb_CTRL1(b)                 (*(vuint32_t*)(b+4))
+#define FLEXCANb_CTRL1(b)                 (*(vuint32_t*)(b+0x04))
+#define FLEXCANb_TIMER(b)                 (*(vuint32_t*)(b+0x08))
 #define FLEXCANb_RXMGMASK(b)              (*(vuint32_t*)(b+0x10))
-#define FLEXCANb_IFLAG1(b)                (*(vuint32_t*)(b+0x30))
+#define FLEXCANb_RX14MASK(b)              (*(vuint32_t*)(b+0x14))
+#define FLEXCANb_RX15MASK(b)              (*(vuint32_t*)(b+0x18))
+#define FLEXCANb_ECR(b)                   (*(vuint32_t*)(b+0x1C))
+#define FLEXCANb_ESR1(b)                  (*(vuint32_t*)(b+0x20)) 
 #define FLEXCANb_IMASK1(b)                (*(vuint32_t*)(b+0x28))
+#define FLEXCANb_IFLAG1(b)                (*(vuint32_t*)(b+0x30))
+#define FLEXCANb_CTRL2(b)                 (*(vuint32_t*)(b+0x34))
+#define FLEXCANb_ESR2(b)                  (*(vuint32_t*)(b+0x38)) 
+#define FLEXCANb_CRCR(b)                  (*(vuint32_t*)(b+0x44)) 
 #define FLEXCANb_RXFGMASK(b)              (*(vuint32_t*)(b+0x48))
+#define FLEXCANb_RXFFIR(b)                (*(vuint32_t*)(b+0x4C))
 #define FLEXCANb_MBn_CS(b, n)             (*(vuint32_t*)(b+0x80+n*0x10))
 #define FLEXCANb_MBn_ID(b, n)             (*(vuint32_t*)(b+0x84+n*0x10))
 #define FLEXCANb_MBn_WORD0(b, n)          (*(vuint32_t*)(b+0x88+n*0x10))
 #define FLEXCANb_MBn_WORD1(b, n)          (*(vuint32_t*)(b+0x8C+n*0x10))
 #define FLEXCANb_IDFLT_TAB(b, n)          (*(vuint32_t*)(b+0xE0+(n*4)))
 #define FLEXCANb_MB_MASK(b, n)            (*(vuint32_t*)(b+0x880+(n*4)))
-#define FLEXCANb_ESR1(b)                  (*(vuint32_t*)(b+0x20)) 
 
 #if defined(__MK66FX1M0__)
 # define INCLUDE_FLEXCAN_CAN1
 #endif
 
-#undef INCLUDE_FLEXCAN_DEBUG
+//#undef INCLUDE_FLEXCAN_DEBUG
+#define INCLUDE_FLEXCAN_DEBUG
 
 #if defined(INCLUDE_FLEXCAN_DEBUG)
 # define dbg_print(fmt, args...)     Serial.print (fmt , ## args)
@@ -38,7 +49,7 @@
 #endif
 
 // Supported FlexCAN interfaces
-
+#define INCLUDE_FLEXCAN_CAN1
 FlexCAN Can0 (0);
 #if defined(INCLUDE_FLEXCAN_CAN1)
 FlexCAN Can1 (1);
@@ -99,7 +110,7 @@ FlexCAN::FlexCAN (uint8_t id)
   }
 #endif
 
-  // Default mask is allow everything
+  // Default mask is allow only extended frames
 
   defaultMask.flags.remote = 0;
   defaultMask.flags.extended = 0;
@@ -156,7 +167,6 @@ void FlexCAN::end (void)
 void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uint8_t rxAlt)
 {
     // set up the pins
-
     if (flexcanBase == FLEXCAN0_BASE) {
         dbg_println ("Begin setup of CAN0");
 
@@ -462,7 +472,8 @@ void FlexCAN::setFilter (const CAN_filter_t &filter, uint8_t mbox)
            FLEXCANb_MBn_ID(flexcanBase, mbox) = (filter.id & FLEXCAN_MB_ID_EXT_MASK);
            FLEXCANb_MBn_CS(flexcanBase, mbox) |= FLEXCAN_MB_CS_IDE;
         } else {
-           FLEXCANb_MBn_ID(flexcanBase, mbox) = FLEXCAN_MB_ID_IDSTD(filter.id);
+           //FLEXCANb_MBn_ID(flexcanBase, mbox) = FLEXCAN_MB_ID_IDSTD(filter.id);
+           FLEXCANb_MBn_ID(flexcanBase, mbox) = FLEXCAN_MB_ID_IDSTD(filter.id & FLEXCAN_MB_ID_EXT_MASK);
            FLEXCANb_MBn_CS(flexcanBase, mbox) &= ~FLEXCAN_MB_CS_IDE;
         }
     }
@@ -853,7 +864,6 @@ uint32_t FlexCAN::ringBufferCount (ringbuffer_t &ring)
     if (entries < 0) {
         entries += ring.size;
     }
-
     return ((uint32_t)entries);
 }
 
@@ -919,22 +929,23 @@ void FlexCAN::message_isr (void)
 #endif
 
             // First, try and handle via callback. If callback fails then buffer the frame.
-
+            // try the general handler first
             for (uint32_t listenerPos = 0; listenerPos < SIZE_LISTENERS; listenerPos++) {
-                thisListener = listener[listenerPos];
+              thisListener = listener[listenerPos];
 
-                // process active listeners
+              // process active listeners
 
-                if (thisListener != NULL) {
+              if (thisListener != NULL) {
 
-                    // call the handler if it's active for this mailbox
-
-                    if (thisListener->callbacksActive & (1 << i)) {
-                        handledFrame |= thisListener->frameHandler (msg, i, controller);
-                    } else if (thisListener->callbacksActive & (1 << 31)) {
-                        handledFrame |= thisListener->frameHandler (msg, -1, controller);
-                    }
+                  // call the handler if it's active for this mailbox
+                if (thisListener->callbacksActive & (0x80000000)) {
+                  handledFrame |= thisListener->frameHandler (msg, 255, controller);
+                  break;
                 }
+                else if (thisListener->callbacksActive & (1 << i)){
+                  handledFrame |= thisListener->frameHandler (msg, i, controller);
+                } 
+              }
             }
 
             // if no objects caught this frame then queue it in the ring buffer
@@ -1327,43 +1338,88 @@ CANListener::CANListener ()
  *
  */
 
-bool CANListener::frameHandler (CAN_message_t &frame, int mailbox, uint8_t controller)
+bool CANListener::frameHandler (CAN_message_t &frame, int8_t mailbox, uint8_t controller)
 {
 
     /* default implementation that doesn't handle frames */
-
+    printFrame(frame, mailbox, controller);
+    //logFrame(frame, mailbox, controller);
+    return (true);
+    /* default implementation that doesn't handle frames */
     return (false);
 }
 
+void CANListener::logFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller)
+{
+
+}
+
+/*
+ * \brief Default CAN frame printer
+ *
+ * \param frame - CAN frame to process.
+ * \param mailbox - mailbox number frame arrived at.
+ * \param controller - controller number frame arrived from.
+ *
+ * \retval void.
+ *
+ */
+
+void CANListener::printFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller)
+{   
+    // char message[19];
+    // if (mailbox < 0){
+    //   sprintf(message, "%5d Can%d", frame.timestamp, controller);   
+    // }
+    // else {
+    //   sprintf(message, "%5d Can%d [%d]", frame.timestamp, controller, mailbox);
+    // }
+    // Serial.print(message);
+
+    // if (frame.flags.extended){
+    //   sprintf(message, "  %08X   [%d] ", frame.id, frame.len);
+    // }
+    // else {
+    //   sprintf(message, "  %03X   [%d] ", frame.id, frame.len);
+    // }
+    // Serial.print(message);
+    // char byteStr[5];
+    // for (uint8_t c = 0; c < frame.len; c++) 
+    // {
+    //    sprintf(byteStr, " %02X", frame.buf[c]); 
+    //    Serial.print(byteStr);
+    // }
+    // Serial.println();
+}
 /*
  * \brief Indicate mailbox has an active callback.
  *
- * \param mailBox - mailbox number.
+ * \param mailbox - mailbox number.
  *
  * \retval None.
  *
  */
 
-void CANListener::attachMBHandler (uint8_t mailBox)
+void CANListener::attachMBHandler (int8_t mailbox)
 {
-    if ((mailBox >= 0) && (mailBox < NUM_MAILBOXES)) {
-        callbacksActive |= (1L << mailBox);
+    if ((mailbox >= 0) && (mailbox < NUM_MAILBOXES)) {
+        callbacksActive |= (1L << mailbox);
     }
 }
 
 /*
  * \brief Clear callback indicator for a mailbox.
  *
- * \param mailBox - mailbox number.
+ * \param mailbox - mailbox number.
  *
  * \retval None.
  *
  */
 
-void CANListener::detachMBHandler (uint8_t mailBox)
+void CANListener::detachMBHandler (int8_t mailbox)
 {
-    if ((mailBox >= 0) && (mailBox < NUM_MAILBOXES)) {
-        callbacksActive &= ~(1L << mailBox);
+    if ((mailbox >= 0) && (mailbox < NUM_MAILBOXES)) {
+        callbacksActive &= ~(1L << mailbox);
     }
 }
 
@@ -1378,7 +1434,7 @@ void CANListener::detachMBHandler (uint8_t mailBox)
 
 void CANListener::attachGeneralHandler (void)
 {
-    callbacksActive |= (1L << 31);
+    callbacksActive |= 0x80000000; //(1L<<31)
 }
 
 /*
@@ -1392,5 +1448,5 @@ void CANListener::attachGeneralHandler (void)
 
 void CANListener::detachGeneralHandler (void)
 {
-    callbacksActive &= ~(1L << 31);
+    callbacksActive &= 0x7FFFFFFF; //~(1L<<31)
 }
