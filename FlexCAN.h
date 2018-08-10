@@ -9,10 +9,13 @@
 #define __FLEXCAN_H__
 
 #include <Arduino.h>
+#include <TimeLib.h>
 
 #if !defined(SIZE_RX_BUFFER)
-#define SIZE_RX_BUFFER  1028 // receive incoming ring buffer size
+#define SIZE_RX_BUFFER  512 // receive incoming ring buffer size
 #endif
+
+#define NUM_RING_BUFFERS 2
 
 #if !defined(SIZE_TX_BUFFER)
 #define SIZE_TX_BUFFER  64 // transmit ring buffer size
@@ -26,7 +29,9 @@
 
 typedef struct CAN_message_t {
   uint32_t id;          // can identifier
+  uint32_t utctime;     // From the realtime clock
   uint16_t timestamp;   // FlexCAN time when message arrived
+  uint32_t microseconds;   // microseconds between each UTC second.
   struct {
     uint8_t extended:1; // identifier is extended (29-bit)
     uint8_t remote:1;   // remote transmission request packet type
@@ -71,10 +76,22 @@ typedef struct ringbuffer_t {
   volatile CAN_message_t *buffer;
 } ringbuffer_t;
 
+typedef struct staticbuffer_t {
+  uint16_t size;
+  static CAN_message_t *buffer;
+} staticbuffer_t;
+
 // for backwards compatibility with previous structure members
 
 #define	ext flags.extended
 #define	rtr flags.remote
+
+
+//time_t utcSeconds;
+
+time_t getTeensy3Time(void);
+
+  
 
 class CANListener
 {
@@ -103,26 +120,22 @@ class FlexCAN
 {
 private:
   uint32_t flexcanBase;
-
   struct CAN_filter_t MBFilters[NUM_MAILBOXES];
   static struct CAN_filter_t defaultMask;
   void mailbox_int_handler (uint8_t mb, uint32_t ul_status);
   CANListener *listener[SIZE_LISTENERS];
-
+  ringbuffer_t rxRing;
   ringbuffer_t txRing;
   volatile CAN_message_t tx_buffer[SIZE_TX_BUFFER];
-  ringbuffer_t rxRing;
   volatile CAN_message_t rx_buffer[SIZE_RX_BUFFER];
-
-
   void writeTxRegisters (const CAN_message_t &msg, uint8_t buffer);
   void readRxRegisters (CAN_message_t &msg, uint8_t buffer);
-
   void initRingBuffer (ringbuffer_t &ring, volatile CAN_message_t *buffer, uint32_t size);
   bool addToRingBuffer (ringbuffer_t &ring, const CAN_message_t &msg);
   bool removeFromRingBuffer (ringbuffer_t &ring, CAN_message_t &msg);
   bool isRingBufferEmpty (ringbuffer_t &ring);
-  uint32_t ringBufferCount (ringbuffer_t &ring);
+  uint32_t ringBufferCount(ringbuffer_t &ring);
+  uint32_t rxEntries;
 
 #ifdef COLLECT_CAN_STATS
   CAN_stats_t stats;
@@ -134,7 +147,6 @@ protected:
 public:
   FlexCAN (uint8_t id = 0);
   void begin (uint32_t baud = 250000, const CAN_filter_t &mask = defaultMask, uint8_t txAlt = 0, uint8_t rxAlt = 0);
-
   void setFilter (const CAN_filter_t &filter, uint8_t n);
   bool getFilter (CAN_filter_t &filter, uint8_t n);
   void setMask (uint32_t mask, uint8_t n);
@@ -142,6 +154,7 @@ public:
   uint32_t available (void);
   int write (const CAN_message_t &msg);
   int read (CAN_message_t &msg);
+  
   uint32_t rxBufferOverruns (void) { return stats.ringRxFramesLost; };
   uint8_t readRxError(void);
 

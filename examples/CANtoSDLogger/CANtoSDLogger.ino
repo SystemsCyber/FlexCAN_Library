@@ -36,7 +36,7 @@ bool waiting = false;
 
 size_t numBytes = 512;
 
-
+elapsedMicros writeMicros;
 uint8_t RxError;
 elapsedMillis printTimer;
 elapsedMillis errorCountTimer;
@@ -163,6 +163,18 @@ void setup(void)
   
   while (!Serial);
   Serial.println(F("Hello Teensy 3.6 dual CAN Test With Objects."));
+  
+//  setSyncProvider(getTeensy3Time);
+//  if (timeStatus()!= timeSet) {
+//    Serial.println("Unable to sync with the RTC");
+//  } else {
+//    Serial.println("RTC has set the system time");
+//  }
+//  setSyncInterval(1);
+//  char timeString[32];
+//  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
+//  Serial.println(timeString);
+
   if (!sdEx.begin()) {
     sdEx.initErrorHalt("SdFatSdioEX begin() failed");
   }
@@ -197,14 +209,14 @@ void setup(void)
 
   while(waiting);
   recordTimer = 0;
-  int messageIndex;
-  uint16_t i = 0;
-  int MESSAGE_COUNT = BUFFER_SIZE / 4;
+  uint32_t messageIndex;
+  uint32_t i = 0;
+  uint32_t MESSAGE_COUNT = BUFFER_SIZE / 4;
   while (recordTimer<5000){
     Can1.read(msg1);
     if (Can0.read(msg0)){
-      Serial.println(messageIndex);
-      Serial.println(i);
+//      ?Serial.println(messageIndex);
+//      Serial.println(i);
       messageIndex ++;
 
       // Arbitration ID
@@ -217,9 +229,10 @@ void setup(void)
       }
       if (messageIndex >= MESSAGE_COUNT){
         messageIndex = 0;
+        writeMicros = 0;
         file.write(tempBuffer, BUFFER_SIZE);
-        
         i = 0;
+        Serial.println(writeMicros);
       }
     }
   }

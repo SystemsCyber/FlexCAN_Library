@@ -52,7 +52,7 @@ typedef volatile uint32_t vuint32_t;
 /*********************************************************************
 *
 * FlexCAN0 (FLEXCAN0)
-* Page 1736 of the k66 Sub-family Reference MAnua, Rev2, May 2015
+* Page 1736 of the k66 Sub-family Reference Manual, Rev2, May 2015
 * 
 *
 *********************************************************************/

@@ -8,6 +8,7 @@
 // Error handling
 //
 #include <stdio.h>
+#include <TimeLib.h>
 #include "FlexCAN.h"
 #include "kinetis_flexcan.h"
 
@@ -89,6 +90,13 @@ uint8_t bitTimingTable[21][3] =
     {7,7,7}, //25
 };
 
+elapsedMicros microsecondsPerSecond;
+time_t getTeensy3Time(){
+  microsecondsPerSecond = 0;
+  return Teensy3Clock.get();
+}
+
+
  /*
   * \brief Initialize the FlexCAN driver class
   *
@@ -101,7 +109,7 @@ uint8_t bitTimingTable[21][3] =
 FlexCAN::FlexCAN (uint8_t id)
 {
   uint32_t i;
-
+  
   flexcanBase = FLEXCAN0_BASE;
 
 #if defined (INCLUDE_FLEXCAN_CAN1)
@@ -130,6 +138,19 @@ FlexCAN::FlexCAN (uint8_t id)
   // clear statistics counts
 
   clearStats ();
+  
+  setSyncProvider(getTeensy3Time);
+  if (timeStatus()!= timeSet) {
+    dbg_println("Unable to sync with the RTC");
+  } else {
+    dbg_println("RTC has set the system time");
+  }
+  setSyncInterval(1);
+  char timeString[32];
+  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
+dbg_println(timeString);
+
+
 }
 
 
@@ -166,6 +187,7 @@ void FlexCAN::end (void)
 
 void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uint8_t rxAlt)
 {
+    
     // set up the pins
     if (flexcanBase == FLEXCAN0_BASE) {
         dbg_println ("Begin setup of CAN0");
@@ -810,6 +832,7 @@ bool FlexCAN::addToRingBuffer (ringbuffer_t &ring, const CAN_message_t &msg)
     return (true);
 }
 
+
 /*
  * \brief Remove a CAN message from the specified ring buffer.
  *
@@ -839,6 +862,7 @@ bool FlexCAN::removeFromRingBuffer (ringbuffer_t &ring, CAN_message_t &msg)
 
     return (true);
 }
+
 
 /*
  * \brief Check if the specified ring buffer is empty.
@@ -916,7 +940,7 @@ void FlexCAN::message_isr (void)
             continue;
         }
         
-        bool extended = FLEXCAN_get_IDE (FLEXCANb_MBn_CS(flexcanBase, i));
+        //bool extended = FLEXCAN_get_IDE (FLEXCANb_MBn_CS(flexcanBase, i));
 
         // examine the reason the mailbox interrupted us
 
@@ -964,9 +988,8 @@ void FlexCAN::message_isr (void)
             if (handledFrame == false) {
                 if (addToRingBuffer (rxRing, msg) != true) {
                     // ring buffer is full, track it
-
                     dbg_println ("Receiver buffer overrun!");
-
+                    
 #if defined(COLLECT_CAN_STATS)
                     if (stats.enabled == true) {
                         stats.ringRxFramesLost++;
@@ -981,6 +1004,7 @@ void FlexCAN::message_isr (void)
                 // track the high water mark for the receive ring buffer
 
                 rxEntries = ringBufferCount (rxRing);
+                
 
                 if (stats.ringRxHighWater < rxEntries) {
                     stats.ringRxHighWater = rxEntries;
