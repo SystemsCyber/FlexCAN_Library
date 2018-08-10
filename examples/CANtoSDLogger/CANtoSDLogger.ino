@@ -13,6 +13,11 @@
 #include "FlexCAN.h"
 #include "SdFat.h"
 
+#define BUFFER_SIZE 512
+//#define MESSAGE_COUNT (BUFFER_SIZE) / sizeof(CAN_message_t)
+uint8_t tempBuffer[BUFFER_SIZE];
+CAN_message_t msg0,msg1;
+
 // 32 KiB buffer.
 const size_t BUF_DIM = 32768;
 // 8 MiB file.
@@ -150,7 +155,7 @@ elapsedMillis recordTimer;
 
 //CANPrinter canPrinter;
 
-static CAN_message_t tempBuffer[SIZE_RX_BUFFER];
+
 
 // -------------------------------------------------------------
 void setup(void)
@@ -192,22 +197,31 @@ void setup(void)
 
   while(waiting);
   recordTimer = 0;
-  int previousCan0buf = Can0.currentBuffer;
-  Serial.print("Can0.currentBuffer: ");
-  Serial.println(Can0.currentBuffer);
-  Serial.print("Can1.currentBuffer: ");
-  Serial.println(Can1.currentBuffer);
+  int messageIndex;
+  uint16_t i = 0;
+  int MESSAGE_COUNT = BUFFER_SIZE / 4;
   while (recordTimer<5000){
-    if (Can0.currentBuffer != previousCan0buf){
-      memcpy(&tempBuffer,&Can0.rxRing[previousCan0buf].buffer, sizeof(Can0.rxRing[previousCan0buf].buffer));
-      file.write(tempBuffer,SIZE_RX_BUFFER);
-      Can0.resetRingBuffer(Can0.rxRing[previousCan0buf]);
-      previousCan0buf = Can0.currentBuffer;
-      Serial.print("Can0.currentBuffer: ");
-      Serial.println(Can0.currentBuffer);
+    Can1.read(msg1);
+    if (Can0.read(msg0)){
+      Serial.println(messageIndex);
+      Serial.println(i);
+      messageIndex ++;
+
+      // Arbitration ID
+      memcpy(&tempBuffer[i], &msg0.id, 4);
+      i+=4;
+      
+       
+      if (i>BUFFER_SIZE){
+        Serial.println("Buffer overflow!");
+      }
+      if (messageIndex >= MESSAGE_COUNT){
+        messageIndex = 0;
+        file.write(tempBuffer, BUFFER_SIZE);
+        
+        i = 0;
+      }
     }
-    
-    
   }
   
   OKtoWrite = false;
@@ -227,7 +241,7 @@ void setup(void)
       sprintf(byteStr, " %02X", file.read()); 
       Serial.print(byteStr);
       count++;
-      if (count >= 512){
+      if (count >= BUFFER_SIZE){
         count = 0;
         delay(1);
         Serial.println();
@@ -242,6 +256,8 @@ void setup(void)
 // -------------------------------------------------------------
 void loop(void)
 { 
+  Can0.read(msg0);
+  Can1.read(msg1);
   RxError = Can0.readRxError();
   if (RxError){
     if (errorCountTimer>5){
