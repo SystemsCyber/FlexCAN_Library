@@ -13,6 +13,15 @@
 #include "FlexCAN.h"
 #include "SdFat.h"
 
+#define UserDataType_t
+struct data_t {
+  time_t timeStamp;
+  uint32_t usec;
+  uint32_t DLC;
+  uint32_t ID;
+  uint8_t dataField[8];
+};
+
 #define BUFFER_SIZE 512
 //#define MESSAGE_COUNT (BUFFER_SIZE) / sizeof(CAN_message_t)
 uint8_t tempBuffer[BUFFER_SIZE];
@@ -171,9 +180,7 @@ void setup(void)
 //    Serial.println("RTC has set the system time");
 //  }
 //  setSyncInterval(1);
-//  char timeString[32];
-//  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
-//  Serial.println(timeString);
+//
 
   if (!sdEx.begin()) {
     sdEx.initErrorHalt("SdFatSdioEX begin() failed");
@@ -215,6 +222,10 @@ void setup(void)
   while (recordTimer<5000){
     Can1.read(msg1);
     if (Can0.read(msg0)){
+      time_t t = msg0.utctime;
+      char timeString[32];
+      sprintf(timeString,"%04u-%02u-%02u %02u:%02u:%02u.%06u",year(t),month(t),day(t),hour(t),minute(t),second(t),uint32_t(msg0.microseconds));
+      Serial.println(timeString);
 //      ?Serial.println(messageIndex);
 //      Serial.println(i);
       messageIndex ++;
@@ -233,6 +244,7 @@ void setup(void)
         file.write(tempBuffer, BUFFER_SIZE);
         i = 0;
         Serial.println(writeMicros);
+        
       }
     }
   }

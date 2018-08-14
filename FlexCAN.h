@@ -27,6 +27,29 @@
 
 #define COLLECT_CAN_STATS
 
+typedef volatile uint32_t vuint32_t;
+
+
+
+#if defined(__MK66FX1M0__)
+# define INCLUDE_FLEXCAN_CAN1
+#endif
+
+//#undef INCLUDE_FLEXCAN_DEBUG
+#define INCLUDE_FLEXCAN_DEBUG
+
+#if defined(INCLUDE_FLEXCAN_DEBUG)
+# define dbg_print(fmt, args...)     Serial.print (fmt , ## args)
+# define dbg_println(fmt, args...)   Serial.println (fmt , ## args)
+#else
+# define dbg_print(fmt, args...)
+# define dbg_println(fmt, args...)
+#endif
+
+
+
+
+
 typedef struct CAN_message_t {
   uint32_t id;          // can identifier
   uint32_t utctime;     // From the realtime clock
@@ -36,7 +59,7 @@ typedef struct CAN_message_t {
     uint8_t extended:1; // identifier is extended (29-bit)
     uint8_t remote:1;   // remote transmission request packet type
     uint8_t overrun:1;  // message overrun
-    uint8_t error:1;  // message overrun
+    uint8_t error:1;  // error message
     uint8_t reserved:4;
   } flags;
   uint8_t len;          // length of data

@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <TimeLib.h>
 #include "FlexCAN.h"
+#include "error.h"
 #include "kinetis_flexcan.h"
 
 #define FLEXCANb_MCR(b)                   (*(vuint32_t*)(b))
@@ -33,21 +34,6 @@
 #define FLEXCANb_MBn_WORD1(b, n)          (*(vuint32_t*)(b+0x8C+n*0x10))
 #define FLEXCANb_IDFLT_TAB(b, n)          (*(vuint32_t*)(b+0xE0+(n*4)))
 #define FLEXCANb_MB_MASK(b, n)            (*(vuint32_t*)(b+0x880+(n*4)))
-
-#if defined(__MK66FX1M0__)
-# define INCLUDE_FLEXCAN_CAN1
-#endif
-
-//#undef INCLUDE_FLEXCAN_DEBUG
-#define INCLUDE_FLEXCAN_DEBUG
-
-#if defined(INCLUDE_FLEXCAN_DEBUG)
-# define dbg_print(fmt, args...)     Serial.print (fmt , ## args)
-# define dbg_println(fmt, args...)   Serial.println (fmt , ## args)
-#else
-# define dbg_print(fmt, args...)
-# define dbg_println(fmt, args...)
-#endif
 
 // Supported FlexCAN interfaces
 #define INCLUDE_FLEXCAN_CAN1
@@ -91,6 +77,7 @@ uint8_t bitTimingTable[21][3] =
 };
 
 elapsedMicros microsecondsPerSecond;
+
 time_t getTeensy3Time(){
   microsecondsPerSecond = 0;
   return Teensy3Clock.get();
@@ -146,9 +133,8 @@ FlexCAN::FlexCAN (uint8_t id)
     dbg_println("RTC has set the system time");
   }
   setSyncInterval(1);
-  char timeString[32];
-  sprintf(timeString,"%04d-%02d-%02d %02d:%02d:%02d.%06d",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
-dbg_println(timeString);
+  
+  
 
 
 }
@@ -187,7 +173,9 @@ void FlexCAN::end (void)
 
 void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uint8_t rxAlt)
 {
-    
+    char timeString[32];
+    sprintf(timeString,"%04u-%02u-%02u %02u:%02u:%02u.%06u",year(),month(),day(),hour(),minute(),second(),uint32_t(microsecondsPerSecond));
+    dbg_println(timeString);
     // set up the pins
     if (flexcanBase == FLEXCAN0_BASE) {
         dbg_println ("Begin setup of CAN0");
@@ -386,11 +374,43 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
     NVIC_ENABLE_IRQ (IRQ_CAN0_MESSAGE);
 #elif defined(__MK66FX1M0__)
     if (flexcanBase == FLEXCAN0_BASE) {
+        // Table 3.3 of the K66 Reference Manual
         NVIC_SET_PRIORITY (IRQ_CAN0_MESSAGE, IRQ_PRIORITY);
         NVIC_ENABLE_IRQ (IRQ_CAN0_MESSAGE);
+
+        NVIC_SET_PRIORITY (IRQ_CAN0_ERROR, IRQ_PRIORITY+1);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_ERROR);
+
+        NVIC_SET_PRIORITY (IRQ_CAN0_BUS_OFF, IRQ_PRIORITY+2);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_BUS_OFF);
+
+        NVIC_SET_PRIORITY (IRQ_CAN0_TX_WARN, IRQ_PRIORITY+3);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_TX_WARN);
+
+        NVIC_SET_PRIORITY (IRQ_CAN0_RX_WARN, IRQ_PRIORITY+4);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_RX_WARN);
+
+        NVIC_SET_PRIORITY (IRQ_CAN0_WAKEUP, IRQ_PRIORITY+5);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_WAKEUP);
+
     } else {
         NVIC_SET_PRIORITY (IRQ_CAN1_MESSAGE, IRQ_PRIORITY);
         NVIC_ENABLE_IRQ (IRQ_CAN1_MESSAGE);
+
+        NVIC_SET_PRIORITY (IRQ_CAN1_ERROR, IRQ_PRIORITY+1);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_ERROR);
+
+        NVIC_SET_PRIORITY (IRQ_CAN1_BUS_OFF, IRQ_PRIORITY+2);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_BUS_OFF);
+
+        NVIC_SET_PRIORITY (IRQ_CAN1_TX_WARN, IRQ_PRIORITY+3);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_TX_WARN);
+
+        NVIC_SET_PRIORITY (IRQ_CAN1_RX_WARN, IRQ_PRIORITY+4);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_RX_WARN);
+
+        NVIC_SET_PRIORITY (IRQ_CAN1_WAKEUP, IRQ_PRIORITY+5);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_WAKEUP);
     }
 #endif
 
@@ -778,6 +798,9 @@ void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
     for (uint8_t loop=msg.len; loop < 8; loop++ ) {
         msg.buf[loop] = 0;
     }
+
+    msg.microseconds = microsecondsPerSecond;
+    msg.utctime = now();
 }
 
 /*
@@ -913,7 +936,7 @@ uint32_t FlexCAN::ringBufferCount (ringbuffer_t &ring)
  */
 
 void FlexCAN::message_isr (void)
-{
+{  
     uint32_t status = FLEXCANb_IFLAG1(flexcanBase);
     uint8_t i;
     CAN_message_t msg;
@@ -1104,8 +1127,24 @@ bool FlexCAN::detachObj (CANListener *listener)
     return false;
 }
 
+/*
+ * \brief Interrupt service routine for FlexCAN class device errors.
+ *
+ * \param None.
+ *
+ * \retval None.
+ *
+ */
+
 void FlexCAN::bus_off_isr (void)
 {
+  // Bus Off Interrupt
+  // See the BOFFINT in CANx_ESR1 register
+  // This bit is set when FlexCAN enters ‘Bus Off’ state. If the corresponding mask bit in the Control Register
+  // (BOFFMSK) is set, an interrupt is generated to the CPU. This bit is cleared by writing it to 1. Writing 0 has
+  // no effect.
+  // 0 No such occurrence.
+  // 1 FlexCAN module entered Bus Off state. 
 }
 
 /*
@@ -1119,37 +1158,125 @@ void FlexCAN::bus_off_isr (void)
 
 void FlexCAN::error_isr (void)
 {
-    uint32_t status = FLEXCANb_ESR1 (flexcanBase);
-//  CAN_message_t msg;
+    CAN_message_t msg;
+    msg.flags.error = true;
+    msg.len = CAN_ERR_DLC;
+    msg.utctime = now();
+    msg.microseconds = microsecondsPerSecond;
+    msg.id=0U; //Initialize the ID
+    
+    // Read the status register (Error and Status 1 Register)
+    uint32_t status = FLEXCANb_ESR1(flexcanBase); 
 
-    // an acknowledge error happened - frame was not ACK'd
+    
+    // Check to see what kind of error it is based on the 
+    // SocketCAN definitions. Set the bits in the ID reflect the error type.
 
-    if (status & FLEXCAN_ESR_ACK_ERR) {
-        // this ISR doesn't get a buffer passed to it so it would have to be cached elsewhere.
-        // msg.flags.extended = (FLEXCANb_MBn_CS(flexcanBase, buffer) & FLEXCAN_MB_CS_IDE)? 1:0;
-        // msg.id  = (FLEXCANb_MBn_ID(flexcanBase, buffer) & FLEXCAN_MB_ID_EXT_MASK);
-        // if (!msg.flags.extended) {
-        //     msg.id >>= FLEXCAN_MB_ID_STD_BIT_NO;
-        //
-        // }
+
+    // Stuffing Error
+    // This bit indicates that a Stuffing Error has been etected.
+    //   0 No such occurrence.
+    //   1 A Stuffing Error occurred since last read of this register.
+    if (status & FLEXCAN_ESR_STF_ERR){
+        msg.id |= CAN_ERR_PROT; /* protocol violations / data[2..3] */
+        msg.buf[2] |= CAN_ERR_PROT_STUFF; /* bit stuffing error */
     }
+
+    // Form Error
+    // This bit indicates that a Form Error has been detected by the receiver node, that is, a fixed-form bit field
+    // contains at least one illegal bit.
+    //   0 No such occurrence.
+    //   1 A Form Error occurred since last read of this register.
+    if (status & FLEXCAN_ESR_FRM_ERR){
+        msg.id |= CAN_ERR_PROT; /* protocol violations / data[2..3] */
+        msg.buf[2] |= CAN_ERR_PROT_FORM; /* frame format error */
+    }
+
+    // Cyclic Redundancy Check Error
+    // This bit indicates that a CRC Error has been detected by the receiver node, that is, the calculated CRC is
+    // different from the received.
+    //   0 No such occurrence.
+    //   1 A CRC error occurred since last read of this register.
+    if (status & FLEXCAN_ESR_CRC_ERR){
+        msg.id |= CAN_ERR_PROT; /* protocol violations / data[2..3] */
+        msg.buf[2] |= CAN_ERR_PROT_CRC; /* the calculated CRC is different from the received. */
+    }
+
+    // Acknowledge Error
+    // This bit indicates that an Acknowledge Error has been detected by the transmitter node, that is, a
+    // dominant bit has not been detected during the ACK SLOT.
+    //   0 No such occurrence.
+    //   1 An ACK error occurred since last read of this register.
+    if (status & FLEXCAN_ESR_ACK_ERR){
+        msg.id |= CAN_ERR_ACK; /* received no ACK on transmission */
+    }
+
+    // Bit0 Error
+    // This bit indicates when an inconsistency occurs between the transmitted and the received bit in a
+    // message.
+    //   0 No such occurrence.
+    //   1 At least one bit sent as dominant is received as recessive.
+    if (status & FLEXCAN_ESR_BIT0_ERR){
+        msg.id |= CAN_ERR_PROT; /* protocol violations / data[2..3] */
+        msg.buf[2] |= CAN_ERR_PROT_BIT0; /* unable to send dominant bit */   
+    }
+    // Bit1 Error
+    // This bit indicates when an inconsistency occurs between the transmitted and the received bit in a message.
+    // NOTE: This bit is not set by a transmitter in case of arbitration field or ACK slot, or in case of a node
+    // sending a passive error flag that detects dominant bits.
+    //   0 No such occurrence.
+    //   1 At least one bit sent as recessive is received as dominant.
+    if (status & FLEXCAN_ESR_BIT1_ERR){
+        msg.id |= CAN_ERR_PROT; /* protocol violations / data[2..3] */
+        msg.buf[2] |= CAN_ERR_PROT_BIT1;
+    }
+
+    if (addToRingBuffer (rxRing, msg) != true) {
+        // ring buffer is full, track it
+        dbg_println ("Receiver buffer overrun from error message!");
+    }
+
+    FLEXCANb_ESR1(flexcanBase) = status; // Write back to the register to reset the Error Interrupt
 }
 
 /*
  * \brief Interrupt service routine for the FlexCAN class transmit warnings.
+ * If the WRNEN bit in MCR is asserted, the TWRNINT bit is set when the TXWRN flag transitions from 0 to
+ * 1, meaning that the Tx error counter reached 96. If the corresponding mask bit in the Control Register
+ * (TWRNMSK) is set, an interrupt is generated to the CPU. This bit is cleared by writing it to 1. When
+ * WRNEN is negated, this flag is masked. CPU must clear this flag before disabling the bit. Otherwise it will
+ * be set when the WRNEN is set again. Writing 0 has no effect. This flag is not generated during Bus Off
+ * state. This bit is not updated during Freeze mode.
+ * 0 No such occurrence.
+ * 1 The Tx error counter transitioned from less than 96 to greater than or equal to 96.
  *
- * \param None.
+  \param None.
  *
  * \retval None.
  *
  */
 
 void FlexCAN::tx_warn_isr (void)
-{
+{ 
+  uint32_t status = FLEXCANb_ESR1(flexcanBase); 
+  
+  dbg_println("The Tx error counter transitioned from less than 96 to greater than or equal to 96.");
+  
+  FLEXCANb_ESR1(flexcanBase) = status; // Write back to the register to reset TWRNINT
+
 }
 
 /*
  * \brief Interrupt service routine for the FlexCAN class receive warnings.
+ *
+ * Rx Warning Interrupt Flag
+ * If the WRNEN bit in MCR is asserted, the RWRNINT bit is set when the RXWRN flag transitions from 0 to
+ * 1, meaning that the Rx error counters reached 96. If the corresponding mask bit in the Control Register
+ * (RWRNMSK) is set, an interrupt is generated to the CPU. This bit is cleared by writing it to 1. When
+ * WRNEN is negated, this flag is masked. CPU must clear this flag before disabling the bit. Otherwise it will
+ * be set when the WRNEN is set again. Writing 0 has no effect. This bit is not updated during Freeze mode.
+ * 0 No such occurrence.
+ * 1 The Rx error counter transitioned from less than 96 to greater than or equal to 96.
  *
  * \param None.
  *
@@ -1158,20 +1285,42 @@ void FlexCAN::tx_warn_isr (void)
  */
 
 void FlexCAN::rx_warn_isr (void)
-{
+{ 
+  CAN_message_t msg;
+  msg.flags.error = true;
+  msg.len = CAN_ERR_DLC;
+  msg.utctime = now();
+  msg.microseconds = microsecondsPerSecond;
+  msg.id=0U; //Initialize the ID
+    
+  uint32_t status = FLEXCANb_ESR1(flexcanBase); 
+  dbg_println("RX Warn Error");
+  FLEXCANb_ESR1(flexcanBase) = status; // Write back to the register to reset RWRNINT
 }
 
 /*
  * \brief Interrupt service routine for the FlexCAN class device wakeup.
- *
+ *   Wake-Up Interrupt
+ *   This field applies when FlexCAN is in low-power mode under Self Wake Up mechanism: Stop mode.
+ *   When a recessive-to-dominant transition is detected on the CAN bus and if the MCR[WAKMSK] bit is set,
+ *   an interrupt is generated to the CPU. This bit is cleared by writing it to 1.
+ *   When MCR[SLFWAK] is negated, this flag is masked. The CPU must clear this flag before disabling the
+ *   bit. Otherwise it will be set when the SLFWAK is set again. Writing 0 has no effect.
+ *   0 No such occurrence.
+ *   1 Indicates a recessive to dominant transition was received on the CAN bus.
  * \param None.
  *
  * \retval None.
  *
  */
+ 
 
 void FlexCAN::wakeup_isr (void)
-{
+{ 
+   
+  uint32_t status = FLEXCANb_ESR1(flexcanBase); 
+
+  FLEXCANb_ESR1(flexcanBase) = status; // Write back to the register to reset WAKINT
 }
 
 /*
