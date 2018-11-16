@@ -82,7 +82,7 @@ Returns 0 if no frames are available. Otherwise returns the number of available 
 **setNumTxBoxes(boxes)**
 Set the number of mailboxes used for transmit. There are 16 mailboxes in hardware. 0 to 16 of them can be set as transmission mailboxes. These mailboxes will then not be used for reception. By default, two mailboxes are automatically configured for transmission.
  
-###Use of Optional RX Filtering
+### Use of Optional RX Filtering
 **setFilter(filter, number)**
 Set the receive filter selected by "number", 0-15. There are 16 mailboxes in hardware but 2 are used, by default, for TX. Those cannot have filters set. Otherwise, each mailbox has its own filter and mask. The transmit boxes are always at the end. So, by default they are 14 and 15. Filters take the form of a CAN bus ID (11 bit or 29 bit).
 
