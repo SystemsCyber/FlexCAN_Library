@@ -369,38 +369,38 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
         NVIC_SET_PRIORITY (IRQ_CAN0_MESSAGE, IRQ_PRIORITY);
         NVIC_ENABLE_IRQ (IRQ_CAN0_MESSAGE);
         
-        NVIC_SET_PRIORITY (IRQ_CAN0_ERROR, IRQ_PRIORITY);
+        NVIC_SET_PRIORITY (IRQ_CAN0_ERROR, IRQ_LOW_PRIORITY);
         NVIC_ENABLE_IRQ (IRQ_CAN0_ERROR);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN0_RX_WARN, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN0_RX_WARN);
+        NVIC_SET_PRIORITY (IRQ_CAN0_RX_WARN, IRQ_LOW_PRIORITY+1);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_RX_WARN);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN0_TX_WARN, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN0_TX_WARN);
+        NVIC_SET_PRIORITY (IRQ_CAN0_TX_WARN, IRQ_LOW_PRIORITY+2);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_TX_WARN);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN0_WAKEUP, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN0_WAKEUP);
+        NVIC_SET_PRIORITY (IRQ_CAN0_WAKEUP, IRQ_LOW_PRIORITY+3);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_WAKEUP);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN0_BUS_OFF, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN0_BUS_OFF);
+        NVIC_SET_PRIORITY (IRQ_CAN0_BUS_OFF, IRQ_LOW_PRIORITY+4);
+        NVIC_ENABLE_IRQ (IRQ_CAN0_BUS_OFF);
     } else {
         NVIC_SET_PRIORITY (IRQ_CAN1_MESSAGE, IRQ_PRIORITY);
         NVIC_ENABLE_IRQ (IRQ_CAN1_MESSAGE);
 
-        NVIC_SET_PRIORITY (IRQ_CAN1_ERROR, IRQ_PRIORITY);
+        NVIC_SET_PRIORITY (IRQ_CAN1_ERROR, IRQ_LOW_PRIORITY);
         NVIC_ENABLE_IRQ (IRQ_CAN1_ERROR);
         
-        // NVIC_SET_PRIORITY (IRQ_CAN1_RX_WARN, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN1_RX_WARN);
+        NVIC_SET_PRIORITY (IRQ_CAN1_RX_WARN, IRQ_LOW_PRIORITY+1);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_RX_WARN);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN1_TX_WARN, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN1_TX_WARN);
+        NVIC_SET_PRIORITY (IRQ_CAN1_TX_WARN, IRQ_LOW_PRIORITY+2);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_TX_WARN);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN1_WAKEUP, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN1_WAKEUP);
+        NVIC_SET_PRIORITY (IRQ_CAN1_WAKEUP, IRQ_LOW_PRIORITY+3);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_WAKEUP);
 
-        // NVIC_SET_PRIORITY (IRQ_CAN1_BUS_OFF, IRQ_PRIORITY);
-        // NVIC_ENABLE_IRQ (IRQ_CAN1_BUS_OFF);
+        NVIC_SET_PRIORITY (IRQ_CAN1_BUS_OFF, IRQ_LOW_PRIORITY+4);
+        NVIC_ENABLE_IRQ (IRQ_CAN1_BUS_OFF);
     }
 #endif
 
@@ -715,7 +715,11 @@ void FlexCAN::writeTxRegisters (const CAN_message_t &msg, uint8_t buffer)
 
 /*
  * 
- *
+ * From the Data sheet:
+ * If the RXERRCNT increases to a value greater than 127, it is not incremented
+ * further, even if more errors are detected while being a receiver. At the next
+ * successful message reception, the counter is set to a value between 119 and 127 to
+ * resume to ‘Error Active’ state.
  */
 
 uint8_t FlexCAN::readREC ()
@@ -725,7 +729,11 @@ uint8_t FlexCAN::readREC ()
 }
 
 /*
+ * \brief Read the transmit error counter from the FlexCAN_ECR Register
+ *  
+ * There are no parameters
  * 
+ * \retval the Transmit Error Counter
  *
  */
 
@@ -965,84 +973,83 @@ void FlexCAN::message_isr (void)
         case FLEXCAN_MB_CODE_RX_FULL:    // rx full, Copy the frame to RX buffer
         case FLEXCAN_MB_CODE_RX_OVERRUN: // rx overrun. Incomming frame overwrote existing frame.
             readRxRegisters (msg, i);
-            addToRingBuffer (rxRing, msg);
-//             handledFrame = false;
+            
+            handledFrame = false;
 
-//             // track message use count if collecting statistics
+            // track message use count if collecting statistics
 
-// #if defined(COLLECT_CAN_STATS)
-//             if (stats.enabled == true) {
-//                 stats.mb[i].refCount++;
+#if defined(COLLECT_CAN_STATS)
+            if (stats.enabled == true) {
+                stats.mb[i].refCount++;
 
-//                 if (msg.flags.overrun) {
-//                     stats.mb[i].overrunCount++;
-//                 }
-//             }
-// #endif
+                if (msg.flags.overrun) {
+                    stats.mb[i].overrunCount++;
+                }
+            }
+#endif
 
-//             // First, try and handle via callback. If callback fails then buffer the frame.
+            // First, try and handle via callback. If callback fails then buffer the frame.
 
-//             for (uint32_t listenerPos = 0; listenerPos < SIZE_LISTENERS; listenerPos++) {
-//                 thisListener = listener[listenerPos];
+            for (uint32_t listenerPos = 0; listenerPos < SIZE_LISTENERS; listenerPos++) {
+                thisListener = listener[listenerPos];
 
-//                 // process active listeners
+                // process active listeners
 
-//                 if (thisListener != NULL) {
+                if (thisListener != NULL) {
 
-//                     // call the handler if it's active for this mailbox
+                    // call the handler if it's active for this mailbox
 
-//                     if (thisListener->callbacksActive & (1 << i)) {
-//                         handledFrame |= thisListener->frameHandler (msg, i, controller);
-//                     } else if (thisListener->callbacksActive & (1 << 31)) {
-//                         handledFrame |= thisListener->frameHandler (msg, -1, controller);
-//                     }
-//                 }
-//             }
+                    if (thisListener->callbacksActive & (1 << i)) {
+                        handledFrame |= thisListener->frameHandler (msg, i, controller);
+                    } else if (thisListener->callbacksActive & (1 << 31)) {
+                        handledFrame |= thisListener->frameHandler (msg, -1, controller);
+                    }
+                }
+            }
 
-//             // if no objects caught this frame then queue it in the ring buffer
+            // if no objects caught this frame then queue it in the ring buffer
 
-//             if (handledFrame == false) {
-//                 if (addToRingBuffer (rxRing, msg) != true) {
-//                     // ring buffer is full, track it
+            if (handledFrame == false) {
+                if (addToRingBuffer (rxRing, msg) != true) {
+                    // ring buffer is full, track it
 
-//                     dbg_println ("Receiver buffer overrun!");
+                    dbg_println ("Receiver buffer overrun!");
 
-// #if defined(COLLECT_CAN_STATS)
-//                     if (stats.enabled == true) {
-//                         stats.ringRxFramesLost++;
-//                     }
-// #endif
-//                 }
-//             }
+                    #if defined(COLLECT_CAN_STATS)
+                    if (stats.enabled == true) {
+                        stats.ringRxFramesLost++;
+                    }
+                    #endif
+                }
+            }
 
-// #if defined(COLLECT_CAN_STATS)
-//             if (stats.enabled == true) {
+            #if defined(COLLECT_CAN_STATS)
+            if (stats.enabled == true) {
 
-//                 // track the high water mark for the receive ring buffer
+                // track the high water mark for the receive ring buffer
 
-//                 rxEntries = ringBufferCount (rxRing);
+                rxEntries = ringBufferCount (rxRing);
 
-//                 if (stats.ringRxHighWater < rxEntries) {
-//                     stats.ringRxHighWater = rxEntries;
-//                 }
-//             }
-// #endif
+                if (stats.ringRxHighWater < rxEntries) {
+                    stats.ringRxHighWater = rxEntries;
+                }
+            }
+            #endif
 
-//             // it seems filtering works by matching against the ID stored in the mailbox
-//             // so after a frame comes in we've got to refresh the ID field to be the filter ID and not the ID
-//             // that just came in.
+            // it seems filtering works by matching against the ID stored in the mailbox
+            // so after a frame comes in we've got to refresh the ID field to be the filter ID and not the ID
+            // that just came in.
 
-//             if (MBFilters[i].flags.extended) {
-//                 FLEXCANb_MBn_ID(flexcanBase, i) = (MBFilters[i].id & FLEXCAN_MB_ID_EXT_MASK);
-//             } else {
-//                 FLEXCANb_MBn_ID(flexcanBase, i) = FLEXCAN_MB_ID_IDSTD(MBFilters[i].id);
-//             }
-//             break;
+            if (MBFilters[i].flags.extended) {
+                FLEXCANb_MBn_ID(flexcanBase, i) = (MBFilters[i].id & FLEXCAN_MB_ID_EXT_MASK);
+            } else {
+                FLEXCANb_MBn_ID(flexcanBase, i) = FLEXCAN_MB_ID_IDSTD(MBFilters[i].id);
+            }
+            break;
 
         case FLEXCAN_MB_CODE_TX_INACTIVE: // TX inactive. Just chillin' waiting for a message to send. Let's see if we've got one.
 
             // if there is a frame in the queue then send it
-
             if (isRingBufferEmpty (txRing) == false) {
                 if (removeFromRingBuffer (txRing, msg) == true) {
                     writeTxRegisters (msg, i);
@@ -1122,6 +1129,10 @@ bool FlexCAN::detachObj (CANListener *listener)
 
 void FlexCAN::bus_off_isr (void)
 {
+  uint32_t status = FLEXCANb_ESR1 (flexcanBase);
+
+  // Clear the ESR Interrupt flag  
+  FLEXCANb_ESR1(flexcanBase) = status; 
 }
 
 /*
@@ -1135,12 +1146,14 @@ void FlexCAN::bus_off_isr (void)
  */
 
 void FlexCAN::error_isr (void)
-{
+{ 
   uint32_t status = FLEXCANb_ESR1 (flexcanBase);
-  CAN_message_t msg;
-  msg.id = CAN_ERR_FLAG; //Set this to show this is an error id
-  msg.len = 8;
-  msg.ext = 1;
+  if (report_errors){
+    CAN_message_t msg;
+    msg.id = CAN_ERR_FLAG; //Set this to show this is an error id
+    msg.len = 8;
+    msg.ext = 1;
+    memset(&msg.buf, 0, 8);
 
     // an acknowledge error happened - frame was not ACK'd
     if (status & FLEXCAN_ESR_ACK_ERR) {
@@ -1187,11 +1200,10 @@ void FlexCAN::error_isr (void)
       msg.id |= CAN_ERR_PROT; /* protocol violations / data[2..3] */
       msg.buf[2] |= CAN_ERR_PROT_BIT1; /* unable to send dominant bit */
     }
-
-  addToRingBuffer (rxRing, msg);
-  
+    addToRingBuffer (rxRing, msg);
+  }  
   // Clear the ESR Interrupt flag  
-  FLEXCANb_ESR1(flexcanBase) |= FLEXCAN_ESR_ERR_INT; 
+  FLEXCANb_ESR1(flexcanBase) = status; 
 }
 
 /*
@@ -1205,9 +1217,11 @@ void FlexCAN::error_isr (void)
 
 void FlexCAN::tx_warn_isr (void)
 {
- // CAN_ERR_CRTL 0x00000004U /* controller problems / data[1]    */
+  uint32_t status = FLEXCANb_ESR1 (flexcanBase);
+  // CAN_ERR_CRTL 0x00000004U /* controller problems / data[1]    */
   /* error status of CAN-controller / data[1] */
-//  CAN_ERR_CRTL_TX_WARNING 0x08 /* reached warning level for TX errors */
+  //  CAN_ERR_CRTL_TX_WARNING 0x08 /* reached warning level for TX errors */
+  FLEXCANb_ESR1(flexcanBase) = status; 
 }
 
 /*
@@ -1221,9 +1235,12 @@ void FlexCAN::tx_warn_isr (void)
 
 void FlexCAN::rx_warn_isr (void)
 {
+
+  uint32_t status = FLEXCANb_ESR1 (flexcanBase);
   //CAN_ERR_CRTL 0x00000004U /* controller problems / data[1]    */
   /* error status of CAN-controller / data[1] */
- // CAN_ERR_CRTL_RX_WARNING 0x04 /* reached warning level for RX errors */
+  // CAN_ERR_CRTL_RX_WARNING 0x04 /* reached warning level for RX errors */
+  FLEXCANb_ESR1(flexcanBase) = status; 
 }
 
 /*
@@ -1236,7 +1253,10 @@ void FlexCAN::rx_warn_isr (void)
  */
 
 void FlexCAN::wakeup_isr (void)
-{
+{ 
+  uint32_t status = FLEXCANb_ESR1 (flexcanBase);
+
+  FLEXCANb_ESR1(flexcanBase) = status;   
 }
 
 /*
