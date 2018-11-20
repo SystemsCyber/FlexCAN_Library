@@ -2,65 +2,37 @@
 // a simple Arduino Teensy 3.1/3.2/3.6 CAN driver
 // by teachop
 // dual CAN support for MK66FX1M0 by Pawelsky
-// Other additions by Collin Kidder
-// 
 //
 #ifndef __FLEXCAN_H__
 #define __FLEXCAN_H__
 
 #include <Arduino.h>
-#include <TimeLib.h>
+
 
 #if !defined(SIZE_RX_BUFFER)
 #define SIZE_RX_BUFFER  512 // receive incoming ring buffer size
 #endif
 
-#define NUM_RING_BUFFERS 2
-
 #if !defined(SIZE_TX_BUFFER)
-#define SIZE_TX_BUFFER  64 // transmit ring buffer size
+#define SIZE_TX_BUFFER  16 // transmit ring buffer size
 #endif
 
-#define SIZE_LISTENERS  4  // number of classes that can register as listeners on each CAN bus
-#define NUM_MAILBOXES   16 // architecture specific but all Teensy 3.x boards have 16 mailboxes
-#define IRQ_PRIORITY    64 // 0 = highest, 255 = lowest
+#define SIZE_LISTENERS   4  // number of classes that can register as listeners on each CAN bus
+#define NUM_MAILBOXES    16 // architecture specific but all Teensy 3.x boards have 16 mailboxes
+#define IRQ_PRIORITY     64 // 0 = highest, 255 = lowest
+#define IRQ_LOW_PRIORITY 225 // 0 = highest, 255 = lowest
 
-#define COLLECT_CAN_STATS
-
-typedef volatile uint32_t vuint32_t;
-
-
-
-#if defined(__MK66FX1M0__)
-# define INCLUDE_FLEXCAN_CAN1
-#endif
-
-//#undef INCLUDE_FLEXCAN_DEBUG
-#define INCLUDE_FLEXCAN_DEBUG
-
-#if defined(INCLUDE_FLEXCAN_DEBUG)
-# define dbg_print(fmt, args...)     Serial.print (fmt , ## args)
-# define dbg_println(fmt, args...)   Serial.println (fmt , ## args)
-#else
-# define dbg_print(fmt, args...)
-# define dbg_println(fmt, args...)
-#endif
-
-
-
+#define COLLECT_CAN_STATS 0
 
 
 typedef struct CAN_message_t {
   uint32_t id;          // can identifier
-  uint32_t utctime;     // From the realtime clock
   uint16_t timestamp;   // FlexCAN time when message arrived
-  uint32_t microseconds;   // microseconds between each UTC second.
   struct {
     uint8_t extended:1; // identifier is extended (29-bit)
     uint8_t remote:1;   // remote transmission request packet type
     uint8_t overrun:1;  // message overrun
-    uint8_t error:1;  // error message
-    uint8_t reserved:4;
+    uint8_t reserved:5;
   } flags;
   uint8_t len;          // length of data
   uint8_t buf[8];
@@ -99,37 +71,22 @@ typedef struct ringbuffer_t {
   volatile CAN_message_t *buffer;
 } ringbuffer_t;
 
-typedef struct staticbuffer_t {
-  uint16_t size;
-  static CAN_message_t *buffer;
-} staticbuffer_t;
-
 // for backwards compatibility with previous structure members
 
 #define	ext flags.extended
 #define	rtr flags.remote
-
-
-//time_t utcSeconds;
-
-time_t getTeensy3Time(void);
-
-  
 
 class CANListener
 {
 public:
   CANListener ();
 
-  virtual bool frameHandler (CAN_message_t &frame, int8_t mailbox, uint8_t controller);
-  virtual void printFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller);
-  virtual void logFrame(CAN_message_t &frame, int8_t mailbox, uint8_t controller);
+  virtual bool frameHandler (CAN_message_t &frame, int mailbox, uint8_t controller);
 
-  void attachMBHandler (int8_t mailbox);
-  void detachMBHandler (int8_t mailbox);
+  void attachMBHandler (uint8_t mailBox);
+  void detachMBHandler (uint8_t mailBox);
   void attachGeneralHandler (void);
   void detachGeneralHandler (void);
-  
 
 private:
   uint32_t callbacksActive; // bitfield indicating which callbacks are installed (for object oriented callbacks only)
@@ -147,18 +104,20 @@ private:
   static struct CAN_filter_t defaultMask;
   void mailbox_int_handler (uint8_t mb, uint32_t ul_status);
   CANListener *listener[SIZE_LISTENERS];
-  ringbuffer_t rxRing;
+
   ringbuffer_t txRing;
   volatile CAN_message_t tx_buffer[SIZE_TX_BUFFER];
+  ringbuffer_t rxRing;
   volatile CAN_message_t rx_buffer[SIZE_RX_BUFFER];
+
   void writeTxRegisters (const CAN_message_t &msg, uint8_t buffer);
   void readRxRegisters (CAN_message_t &msg, uint8_t buffer);
+
   void initRingBuffer (ringbuffer_t &ring, volatile CAN_message_t *buffer, uint32_t size);
   bool addToRingBuffer (ringbuffer_t &ring, const CAN_message_t &msg);
   bool removeFromRingBuffer (ringbuffer_t &ring, CAN_message_t &msg);
   bool isRingBufferEmpty (ringbuffer_t &ring);
-  uint32_t ringBufferCount(ringbuffer_t &ring);
-  uint32_t rxEntries;
+  uint32_t ringBufferCount (ringbuffer_t &ring);
 
 #ifdef COLLECT_CAN_STATS
   CAN_stats_t stats;
@@ -170,6 +129,9 @@ protected:
 public:
   FlexCAN (uint8_t id = 0);
   void begin (uint32_t baud = 250000, const CAN_filter_t &mask = defaultMask, uint8_t txAlt = 0, uint8_t rxAlt = 0);
+
+  bool report_errors;
+
   void setFilter (const CAN_filter_t &filter, uint8_t n);
   bool getFilter (CAN_filter_t &filter, uint8_t n);
   void setMask (uint32_t mask, uint8_t n);
@@ -177,9 +139,7 @@ public:
   uint32_t available (void);
   int write (const CAN_message_t &msg);
   int read (CAN_message_t &msg);
-  
   uint32_t rxBufferOverruns (void) { return stats.ringRxFramesLost; };
-  uint8_t readRxError(void);
 
 #ifdef COLLECT_CAN_STATS
   void startStats (void) { stats.enabled = true; };
@@ -188,12 +148,12 @@ public:
   CAN_stats_t getStats (void) { return stats; };
 #endif
 
+  //new functionality added to header but not yet implemented. Fix me
   void setListenOnly (bool mode); //pass true to go into listen only mode, false to be in normal mode
 
   bool attachObj (CANListener *listener);
   bool detachObj (CANListener *listener);
 
-  //new functionality added to header but not yet implemented. Fix me
   //int watchFor(); //allow anything through
   //int watchFor(uint32_t id); //allow just this ID through (automatic determination of extended status)
   //int watchFor(uint32_t id, uint32_t mask); //allow a range of ids through
@@ -207,6 +167,10 @@ public:
   void tx_warn_isr (void);
   void rx_warn_isr (void);
   void wakeup_isr (void);
+
+  uint8_t readTEC ();
+  uint8_t readREC ();
+
 };
 
 extern FlexCAN Can0;

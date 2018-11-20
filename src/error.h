@@ -1,9 +1,6 @@
 /* SPDX-License-Identifier: ((GPL-2.0 WITH Linux-syscall-note) OR BSD-3-Clause) */
 /*
  * linux/can/error.h
- * 
- * Copied on 11 Aug 2018 from
- * https://github.com/torvalds/linux/blob/master/include/uapi/linux/can/error.h
  *
  * Definitions of the CAN error messages to be filtered and passed to the user.
  *
@@ -48,6 +45,26 @@
 #ifndef _UAPI_CAN_ERROR_H
 #define _UAPI_CAN_ERROR_H
 
+//Redefine these from can.h
+/* special address description flags for the CAN_ID */
+#define CAN_EFF_FLAG 0x80000000U /* EFF/SFF is set in the MSB */
+#define CAN_RTR_FLAG 0x40000000U /* remote transmission request */
+#define CAN_ERR_FLAG 0x20000000U /* error message frame */
+
+/* valid bits in CAN ID for frame formats */
+#define CAN_SFF_MASK 0x000007FFU /* standard frame format (SFF) */
+#define CAN_EFF_MASK 0x1FFFFFFFU /* extended frame format (EFF) */
+#define CAN_ERR_MASK 0x1FFFFFFFU /* omit EFF, RTR, ERR flags */
+
+/*
+ * Controller Area Network Identifier structure
+ *
+ * bit 0-28	: CAN identifier (11/29 bit)
+ * bit 29	: error message frame flag (0 = data frame, 1 = error message)
+ * bit 30	: remote transmission request flag (1 = rtr frame)
+ * bit 31	: frame format flag (0 = standard 11 bit, 1 = extended 29 bit)
+
+
 #define CAN_ERR_DLC 8 /* dlc for error message frames */
 
 /* error class (mask) in can_id */
@@ -87,7 +104,6 @@
 #define CAN_ERR_PROT_OVERLOAD    0x20 /* bus overload */
 #define CAN_ERR_PROT_ACTIVE      0x40 /* active error announcement */
 #define CAN_ERR_PROT_TX          0x80 /* error occurred on transmission */
-#define CAN_ERR_PROT_CRC         0x18 /* the calculated CRC is different from the received. */
 
 /* error in CAN protocol (location) / data[3] */
 #define CAN_ERR_PROT_LOC_UNSPEC  0x00 /* unspecified */
