@@ -8,6 +8,21 @@
 
 #include <Arduino.h>
 
+#define AUTOBAUD_TIMEOUT 150 //milliseconds to look for message
+#define EEPROM_BIT_RATE_INDEX_ADDR 0 //Location in EEPROM for the bitrate index
+#define NUM_BAUD_RATES 5
+#define BAUD_RATE_LIST {250000, 500000, 125000, 666666, 1000000}
+
+#define INCLUDE_FLEXCAN_DEBUG 1
+
+#if defined(INCLUDE_FLEXCAN_DEBUG)
+  #define dbg_print(fmt, args...)     Serial.print (fmt , ## args)
+  #define dbg_println(fmt, args...)   Serial.println (fmt , ## args)
+#else
+  #define dbg_print(fmt, args...)
+  #define dbg_println(fmt, args...)
+#endif
+
 
 #if !defined(SIZE_RX_BUFFER)
 #define SIZE_RX_BUFFER  512 // receive incoming ring buffer size
@@ -99,6 +114,10 @@ private:
 class FlexCAN
 {
 private:
+  bool autobaud;
+  uint8_t baud_rate_index;
+  uint32_t baud_rates[NUM_BAUD_RATES] = BAUD_RATE_LIST;
+
   uint32_t flexcanBase;
   struct CAN_filter_t MBFilters[NUM_MAILBOXES];
   static struct CAN_filter_t defaultMask;
@@ -118,6 +137,10 @@ private:
   bool removeFromRingBuffer (ringbuffer_t &ring, CAN_message_t &msg);
   bool isRingBufferEmpty (ringbuffer_t &ring);
   uint32_t ringBufferCount (ringbuffer_t &ring);
+
+  void freezeMode(bool mode);
+  bool set_baud_rate(uint32_t baud);
+  uint32_t get_baud_rate(void);
 
 #ifdef COLLECT_CAN_STATS
   CAN_stats_t stats;
@@ -148,7 +171,6 @@ public:
   CAN_stats_t getStats (void) { return stats; };
 #endif
 
-  //new functionality added to header but not yet implemented. Fix me
   void setListenOnly (bool mode); //pass true to go into listen only mode, false to be in normal mode
 
   bool attachObj (CANListener *listener);
