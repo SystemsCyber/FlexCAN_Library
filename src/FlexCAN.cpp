@@ -89,10 +89,12 @@ FlexCAN::FlexCAN (uint8_t id)
   uint32_t i;
 
   flexcanBase = FLEXCAN0_BASE;
+  eeprom_RATE_INDEX_ADDR = EEPROM_BIT_RATE_INDEX_ADDR;
 
 #if defined (INCLUDE_FLEXCAN_CAN1)
   if (id > 0)  {
     flexcanBase = FLEXCAN1_BASE;
+    eeprom_RATE_INDEX_ADDR = EEPROM_BIT_RATE_INDEX_ADDR + 1;
   }
 #endif
 
@@ -314,6 +316,26 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
 }
 
 /*
+ * \brief Set self reception or loopback mode on or off.
+ *
+ * \param mode - set loop only mode?
+ *
+ * \retval None.
+ *
+ */
+void FlexCAN::setSelfReception (bool mode)
+{
+  
+  freezeMode(true);  
+  if (mode)
+    FLEXCANb_MCR (flexcanBase) &= ~FLEXCAN_MCR_SRX_DIS;
+  else
+    FLEXCANb_MCR (flexcanBase) |= FLEXCAN_MCR_SRX_DIS;
+  freezeMode(false);
+}
+
+
+/*
  *
  */
 uint32_t FlexCAN::get_baud_rate(void)
@@ -329,8 +351,8 @@ uint32_t FlexCAN::get_baud_rate(void)
   setListenOnly(true);
 
   // lookup what the value of the bitrate was before
-  uint8_t initial_baud_rate_index = EEPROM.read(EEPROM_BIT_RATE_INDEX_ADDR);
-  if (initial_baud_rate_index > NUM_BAUD_RATES) initial_baud_rate_index = 0;
+  uint8_t initial_baud_rate_index = EEPROM.read(eeprom_RATE_INDEX_ADDR);
+  if (initial_baud_rate_index >= NUM_BAUD_RATES) initial_baud_rate_index = 0;
   baud_rate_index = initial_baud_rate_index;
 
   // Setup a timer for an overall baudrate detection timeout
@@ -361,7 +383,7 @@ uint32_t FlexCAN::get_baud_rate(void)
         // A message was successfully received, 
         if (initial_baud_rate_index != baud_rate_index)
         {
-          EEPROM.update(EEPROM_BIT_RATE_INDEX_ADDR,baud_rate_index);
+          EEPROM.update(eeprom_RATE_INDEX_ADDR,baud_rate_index);
         }
         setListenOnly(false);
         return baud_rates[baud_rate_index];
@@ -373,8 +395,7 @@ uint32_t FlexCAN::get_baud_rate(void)
       }
     }
     baud_rate_index++;
-
-    if (baud_rate_index > NUM_BAUD_RATES) baud_rate_index = 0;
+    if (baud_rate_index >= NUM_BAUD_RATES) baud_rate_index = 0;
   }
 
   // Set the previous known rate after an overall timout. 
@@ -836,6 +857,7 @@ void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
     msg.flags.extended = (mb_CS & FLEXCAN_MB_CS_IDE) ? 1:0;
     msg.flags.remote = (mb_CS & FLEXCAN_MB_CS_RTR) ? 1:0;
     msg.timestamp = FLEXCAN_get_timestamp (mb_CS);
+    msg.micros = micros(); 
     msg.flags.overrun = 0;
     msg.flags.reserved = 0;
 
@@ -874,7 +896,7 @@ void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
     }
  
     for (uint32_t loop=msg.len; loop < 8; loop++ ) {
-        msg.buf[loop] = 0;
+        msg.buf[loop] = 0xFF;
     }
 }
 
@@ -1311,6 +1333,10 @@ void FlexCAN::rx_warn_isr (void)
 {
 
   uint32_t status = FLEXCANb_ESR1 (flexcanBase);
+
+  // If many rx errors are occurring, it is likely the baud rate is off
+  Serial.print("RX Warn Interrupt. Setting new baudrate to ");
+  Serial.println(get_baud_rate());
   //CAN_ERR_CRTL 0x00000004U /* controller problems / data[1]    */
   /* error status of CAN-controller / data[1] */
   // CAN_ERR_CRTL_RX_WARNING 0x04 /* reached warning level for RX errors */

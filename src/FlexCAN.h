@@ -42,6 +42,7 @@
 
 typedef struct CAN_message_t {
   uint32_t id;          // can identifier
+  uint32_t micros;      // system microseconds
   uint16_t timestamp;   // FlexCAN time when message arrived
   struct {
     uint8_t extended:1; // identifier is extended (29-bit)
@@ -117,8 +118,10 @@ private:
   bool autobaud;
   uint8_t baud_rate_index;
   uint32_t baud_rates[NUM_BAUD_RATES] = BAUD_RATE_LIST;
-
+  
   uint32_t flexcanBase;
+  uint8_t eeprom_RATE_INDEX_ADDR;
+
   struct CAN_filter_t MBFilters[NUM_MAILBOXES];
   static struct CAN_filter_t defaultMask;
   void mailbox_int_handler (uint8_t mb, uint32_t ul_status);
@@ -172,6 +175,7 @@ public:
 #endif
 
   void setListenOnly (bool mode); //pass true to go into listen only mode, false to be in normal mode
+  void setSelfReception (bool mode); 
 
   bool attachObj (CANListener *listener);
   bool detachObj (CANListener *listener);
