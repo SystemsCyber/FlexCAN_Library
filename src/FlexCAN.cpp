@@ -86,8 +86,8 @@ uint8_t bitTimingTable[21][3] =
 
 FlexCAN::FlexCAN (uint8_t id)
 {
-  uint32_t i;
-
+  
+  can_channel = id;
   flexcanBase = FLEXCAN0_BASE;
   eeprom_RATE_INDEX_ADDR = EEPROM_BIT_RATE_INDEX_ADDR;
 
@@ -111,7 +111,7 @@ FlexCAN::FlexCAN (uint8_t id)
 
   // clear any listeners for received packets
 
-  for (i = 0; i < SIZE_LISTENERS; i++) {
+  for (size_t i = 0; i < SIZE_LISTENERS; i++) {
     listener[i] = NULL;
   }
 
@@ -294,12 +294,13 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
     // now have to set mask and filter for all the Rx mailboxes or they won't receive anything by default.
     CAN_filter_t allPassFilter;
     allPassFilter.ext=0;
-    for (uint8_t c = 0; c < 4; c++) {
+    for (uint8_t c = 0; c < 6; c++) {
         setMask (0, c);
         setFilter (allPassFilter, c);
     }
-    allPassFilter.ext=0;
-    for (uint8_t c = 4; c < NUM_MAILBOXES - numTxMailboxes; c++) {
+    // be sure to include some filters to enable extended ids
+    allPassFilter.ext=1;
+    for (uint8_t c = 6; c < NUM_MAILBOXES - numTxMailboxes; c++) {
         setMask (0, c);
         setFilter (allPassFilter, c);
     }
@@ -311,8 +312,10 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
 
     if (autobaud) {
       baud = get_baud_rate();
-      dbg_println ("Baud rate automatically set to ");
-      dbg_println (baud);
+      Serial.print ("Baud rate for Can");
+      Serial.print (can_channel);
+      Serial.print (" set to ");
+      Serial.println (baud);
     }
     else set_baud_rate(baud);
 

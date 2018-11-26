@@ -118,7 +118,7 @@ class FlexCAN
 private:
   bool autobaud;
   bool report_errors;
-  
+  uint8_t can_channel;
   uint8_t baud_rate_index;
   uint32_t baud_rates[NUM_BAUD_RATES] = BAUD_RATE_LIST;
   
