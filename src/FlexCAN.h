@@ -13,9 +13,9 @@
 #define NUM_BAUD_RATES 5
 #define BAUD_RATE_LIST {250000, 500000, 125000, 666666, 1000000}
 
-#define INCLUDE_FLEXCAN_DEBUG 1
+#define INCLUDE_FLEXCAN_DEBUG 0
 
-#if defined(INCLUDE_FLEXCAN_DEBUG)
+#if(INCLUDE_FLEXCAN_DEBUG)
   #define dbg_print(fmt, args...)     Serial.print (fmt , ## args)
   #define dbg_println(fmt, args...)   Serial.println (fmt , ## args)
 #else
@@ -43,6 +43,7 @@
 typedef struct CAN_message_t {
   uint32_t id;          // can identifier
   uint32_t micros;      // system microseconds
+  uint32_t rxcount;      // number of received messages
   uint16_t timestamp;   // FlexCAN time when message arrived
   struct {
     uint8_t extended:1; // identifier is extended (29-bit)
@@ -116,6 +117,8 @@ class FlexCAN
 {
 private:
   bool autobaud;
+  bool report_errors;
+  
   uint8_t baud_rate_index;
   uint32_t baud_rates[NUM_BAUD_RATES] = BAUD_RATE_LIST;
   
@@ -156,8 +159,6 @@ public:
   FlexCAN (uint8_t id = 0);
   void begin (uint32_t baud = 250000, const CAN_filter_t &mask = defaultMask, uint8_t txAlt = 0, uint8_t rxAlt = 0);
 
-  bool report_errors;
-
   void setFilter (const CAN_filter_t &filter, uint8_t n);
   bool getFilter (CAN_filter_t &filter, uint8_t n);
   void setMask (uint32_t mask, uint8_t n);
@@ -176,6 +177,7 @@ public:
 
   void setListenOnly (bool mode); //pass true to go into listen only mode, false to be in normal mode
   void setSelfReception (bool mode); 
+  void setReportErrors (bool mode); 
 
   bool attachObj (CANListener *listener);
   bool detachObj (CANListener *listener);

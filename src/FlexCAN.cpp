@@ -116,7 +116,6 @@ FlexCAN::FlexCAN (uint8_t id)
   }
 
   // clear statistics counts
-
   clearStats ();
 }
 
@@ -139,7 +138,9 @@ void FlexCAN::end (void)
  /*
   * \brief Initializes the CAN bus to the given settings
   *
-  * \param baud - Set the baud rate of the bus. Only certain values are valid 50000, 100000, 125000, 250000, 500000, 1000000
+  * \param baud - Set the baud rate of the bus. 
+  *               Only certain values are valid 50000, 100000, 125000, 250000, 500000, 1000000
+  *               If a 0 is used, then an autobaud technique is used.
   * \param mask - A default mask to use for all mailbox masks. Optional.
   * \param txAlt - 1 to enable alternate Tx pin (where available)
   * \param rxAlt - 1 to enable alternate Rx pin (where available)
@@ -292,8 +293,13 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
 
     // now have to set mask and filter for all the Rx mailboxes or they won't receive anything by default.
     CAN_filter_t allPassFilter;
-    allPassFilter.ext=1; // Receive extended frames by default
-    for (uint8_t c = 0; c < NUM_MAILBOXES - numTxMailboxes; c++) {
+    allPassFilter.ext=0;
+    for (uint8_t c = 0; c < 4; c++) {
+        setMask (0, c);
+        setFilter (allPassFilter, c);
+    }
+    allPassFilter.ext=0;
+    for (uint8_t c = 4; c < NUM_MAILBOXES - numTxMailboxes; c++) {
         setMask (0, c);
         setFilter (allPassFilter, c);
     }
@@ -303,8 +309,6 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
     // enable interrupt masks for all 16 mailboxes
     FLEXCANb_IMASK1 (flexcanBase) = 0xFFFF;
 
-    dbg_print ("autobaud = ");
-    dbg_println (autobaud);
     if (autobaud) {
       baud = get_baud_rate();
       dbg_println ("Baud rate automatically set to ");
@@ -312,11 +316,32 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
     }
     else set_baud_rate(baud);
 
-    dbg_println ("CAN initialized properly");
+    dbg_println ("FlexCAN initialized properly");
 }
 
 /*
- * \brief Set self reception or loopback mode on or off.
+ * \brief Set the error reporting switch.
+ *
+ * \param mode - set report_error?
+ *
+ * \retval None.
+ *
+ */
+void FlexCAN::setReportErrors (bool mode)
+{
+  report_errors = mode;
+}
+
+/*
+ * \brief 
+ Self Reception Disable
+This bit defines whether FlexCAN is allowed to receive frames transmitted by itself. If this bit is asserted,
+frames transmitted by the module will not be stored in any MB, regardless if the MB is programmed with
+an ID that matches the transmitted frame, and no interrupt flag or interrupt signal will be generated due to
+the frame reception. This bit can be written only in Freeze mode because it is blocked by hardware in
+other modes.
+0 Self reception enabled.
+1 Self reception disabled.
  *
  * \param mode - set loop only mode?
  *
@@ -343,7 +368,7 @@ uint32_t FlexCAN::get_baud_rate(void)
   // empty the ring buffer
   CAN_message_t rxmsg;
   while (read(rxmsg));
-  
+  bool previous_listen_only_mode = FLEXCANb_CTRL1(flexcanBase) & FLEXCAN_CTRL_LOM;
   // turn off error reporting
   report_errors = false;
 
@@ -360,7 +385,7 @@ uint32_t FlexCAN::get_baud_rate(void)
   while ((millis() - routine_start_time) < (AUTOBAUD_TIMEOUT * NUM_BAUD_RATES))
   {
     // Set the bit rate
-    dbg_print ("Looing for Messages at ");
+    dbg_print ("Looking for Messages at ");
     dbg_print (baud_rates[baud_rate_index]);
     dbg_println (" bps.");
 
@@ -400,7 +425,7 @@ uint32_t FlexCAN::get_baud_rate(void)
 
   // Set the previous known rate after an overall timout. 
   set_baud_rate(baud_rates[initial_baud_rate_index]);
-  setListenOnly(false);
+  setListenOnly(previous_listen_only_mode);
   return baud_rates[initial_baud_rate_index];
 }
 
@@ -472,15 +497,15 @@ bool FlexCAN::set_baud_rate(uint32_t baud)
     uint8_t pSeg2   = bitTimingTable[result][2];
 
     // baud rate debug information
-    dbg_println ("Bit time values:");
-    dbg_print ("Prop = ");
-    dbg_println (propSeg + 1);
-    dbg_print ("Seg1 = ");
-    dbg_println (pSeg1 + 1);
-    dbg_print ("Seg2 = ");
-    dbg_println (pSeg2 + 1);
-    dbg_print ("Divisor = ");
-    dbg_println (divisor + 1);
+    // dbg_println ("Bit time values:");
+    // dbg_print ("Prop = ");
+    // dbg_println (propSeg + 1);
+    // dbg_print ("Seg1 = ");
+    // dbg_println (pSeg1 + 1);
+    // dbg_print ("Seg2 = ");
+    // dbg_println (pSeg2 + 1);
+    // dbg_print ("Divisor = ");
+    // dbg_println (divisor + 1);
 
     freezeMode(true);
     FLEXCANb_CTRL1 (flexcanBase) = (FLEXCAN_CTRL_PROPSEG(propSeg) | FLEXCAN_CTRL_RJW(1) | FLEXCAN_CTRL_ERR_MSK |
@@ -847,7 +872,7 @@ uint8_t FlexCAN::readTEC ()
  *
  */
 
-void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
+void FlexCAN::readRxRegisters (CAN_message_t &msg, uint8_t buffer)
 {
     uint32_t mb_CS = FLEXCANb_MBn_CS(flexcanBase, buffer);
 
@@ -857,7 +882,8 @@ void FlexCAN::readRxRegisters (CAN_message_t& msg, uint8_t buffer)
     msg.flags.extended = (mb_CS & FLEXCAN_MB_CS_IDE) ? 1:0;
     msg.flags.remote = (mb_CS & FLEXCAN_MB_CS_RTR) ? 1:0;
     msg.timestamp = FLEXCAN_get_timestamp (mb_CS);
-    msg.micros = micros(); 
+    msg.micros = micros();
+    msg.rxcount++; 
     msg.flags.overrun = 0;
     msg.flags.reserved = 0;
 
@@ -1022,6 +1048,7 @@ uint32_t FlexCAN::ringBufferCount (ringbuffer_t &ring)
     return ((uint32_t)entries);
 }
 
+
 /*
  * \brief Interrupt service routine for the FlexCAN class message events.
  *
@@ -1030,7 +1057,6 @@ uint32_t FlexCAN::ringBufferCount (ringbuffer_t &ring)
  * \retval None.
  *
  */
-
 void FlexCAN::message_isr (void)
 {
     uint32_t status = FLEXCANb_IFLAG1(flexcanBase);
@@ -1069,6 +1095,7 @@ void FlexCAN::message_isr (void)
         case FLEXCAN_MB_CODE_RX_FULL:    // rx full, Copy the frame to RX buffer
         case FLEXCAN_MB_CODE_RX_OVERRUN: // rx overrun. Incomming frame overwrote existing frame.
             readRxRegisters (msg, i);
+            
             
             handledFrame = false;
 
