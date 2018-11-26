@@ -8,19 +8,22 @@
 
 #include <Arduino.h>
 
+
 #if !defined(SIZE_RX_BUFFER)
-#define SIZE_RX_BUFFER  32 // receive incoming ring buffer size
+#define SIZE_RX_BUFFER  512 // receive incoming ring buffer size
 #endif
 
 #if !defined(SIZE_TX_BUFFER)
 #define SIZE_TX_BUFFER  16 // transmit ring buffer size
 #endif
 
-#define SIZE_LISTENERS  4  // number of classes that can register as listeners on each CAN bus
-#define NUM_MAILBOXES   16 // architecture specific but all Teensy 3.x boards have 16 mailboxes
-#define IRQ_PRIORITY    64 // 0 = highest, 255 = lowest
+#define SIZE_LISTENERS   4  // number of classes that can register as listeners on each CAN bus
+#define NUM_MAILBOXES    16 // architecture specific but all Teensy 3.x boards have 16 mailboxes
+#define IRQ_PRIORITY     64 // 0 = highest, 255 = lowest
+#define IRQ_LOW_PRIORITY 225 // 0 = highest, 255 = lowest
 
-#define COLLECT_CAN_STATS
+#define COLLECT_CAN_STATS 0
+
 
 typedef struct CAN_message_t {
   uint32_t id;          // can identifier
@@ -127,6 +130,8 @@ public:
   FlexCAN (uint8_t id = 0);
   void begin (uint32_t baud = 250000, const CAN_filter_t &mask = defaultMask, uint8_t txAlt = 0, uint8_t rxAlt = 0);
 
+  bool report_errors;
+
   void setFilter (const CAN_filter_t &filter, uint8_t n);
   bool getFilter (CAN_filter_t &filter, uint8_t n);
   void setMask (uint32_t mask, uint8_t n);
@@ -162,6 +167,10 @@ public:
   void tx_warn_isr (void);
   void rx_warn_isr (void);
   void wakeup_isr (void);
+
+  uint8_t readTEC ();
+  uint8_t readREC ();
+
 };
 
 extern FlexCAN Can0;

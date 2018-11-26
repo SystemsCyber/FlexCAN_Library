@@ -13,6 +13,10 @@
   #error "Teensy 3.6 with dual CAN bus is required to run this example"
 #endif
 
+uint8_t RxError;
+elapsedMillis printTimer;
+elapsedMillis errorCountTimer;
+
 // Create a new class to define functions in the CANListener class in FlexCAN.cpp
 class CANPrinter : public CANListener 
 {
@@ -61,8 +65,11 @@ bool CANPrinter::frameHandler(CAN_message_t &frame, int8_t mailbox, uint8_t cont
 {
     // This function can't keep up with a fully loaded CAN bus
     // A fully loaded bus may crash the Teensy when filling the serial buffer
-    printFrame(frame, mailbox, controller);
-
+    if (printTimer>5){
+      printTimer = 0;
+      printFrame(frame, mailbox, controller);
+    }
+    
     // be sure to return true to tell the library that you've processed the frame.
     // Otherwise, the data goes into a ringbuffer and waits to be read. 
     return true;
@@ -98,21 +105,35 @@ void setup(void)
   }
 
   //Set up all the mailbox handlers
-  for (uint8_t mailbox = 0; mailbox < NUM_MAILBOXES; mailbox++){
-     canPrinter.attachMBHandler(mailbox);
-  }
+//  for (uint8_t mailbox = 0; mailbox < NUM_MAILBOXES; mailbox++){
+//     canPrinter.attachMBHandler(mailbox);
+//  }
   // Alternatively, you can use the general handler, but this won't accept mixed
   // extended and standard ID frames.
-  //canPrinter.attachGeneralHandler();
+  canPrinter.attachGeneralHandler();
 
   
 }
 
 // -------------------------------------------------------------
 void loop(void)
-{
-//  Serial.println(Can0.readRxError());
-//  Serial.println(Can1.readRxError());
+{ 
+  RxError = Can0.readRxError();
+  if (RxError){
+    if (errorCountTimer>5){
+     errorCountTimer = 0;
+     Serial.print("Can0 RxError: ");
+     Serial.println(RxError);
+    }
+    
+ 
+  }
+  RxError = Can1.readRxError();
+  if (RxError){
+    Serial.print("Can1 RxError: ");
+    Serial.println(RxError);
+    
+  }
 }
 
 
