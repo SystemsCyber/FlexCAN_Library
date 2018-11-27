@@ -34,6 +34,7 @@
 
 #define SIZE_LISTENERS   4  // number of classes that can register as listeners on each CAN bus
 #define NUM_MAILBOXES    16 // architecture specific but all Teensy 3.x boards have 16 mailboxes
+#define NUM_TX_MAILBOXES 2
 #define IRQ_PRIORITY     64 // 0 = highest, 255 = lowest
 #define IRQ_LOW_PRIORITY 225 // 0 = highest, 255 = lowest
 

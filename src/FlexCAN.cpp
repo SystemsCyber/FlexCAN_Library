@@ -91,6 +91,8 @@ FlexCAN::FlexCAN (uint8_t id)
   flexcanBase = FLEXCAN0_BASE;
   eeprom_RATE_INDEX_ADDR = EEPROM_BIT_RATE_INDEX_ADDR;
 
+  numTxMailboxes = NUM_TX_MAILBOXES;
+
 #if defined (INCLUDE_FLEXCAN_CAN1)
   if (id > 0)  {
     flexcanBase = FLEXCAN1_BASE;
@@ -101,7 +103,7 @@ FlexCAN::FlexCAN (uint8_t id)
   // Default mask is allow everything
 
   defaultMask.flags.remote = 0;
-  defaultMask.flags.extended = 1;
+  defaultMask.flags.extended = 0;
   defaultMask.id = 0;
 
   // set up the transmit and receive ring buffers
@@ -324,6 +326,7 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
 
 /*
  * \brief Set the error reporting switch.
+ *        Error messages follow the Linux SocketCAN format
  *
  * \param mode - set report_error?
  *
@@ -336,15 +339,14 @@ void FlexCAN::setReportErrors (bool mode)
 }
 
 /*
- * \brief 
- Self Reception Disable
-This bit defines whether FlexCAN is allowed to receive frames transmitted by itself. If this bit is asserted,
-frames transmitted by the module will not be stored in any MB, regardless if the MB is programmed with
-an ID that matches the transmitted frame, and no interrupt flag or interrupt signal will be generated due to
-the frame reception. This bit can be written only in Freeze mode because it is blocked by hardware in
-other modes.
-0 Self reception enabled.
-1 Self reception disabled.
+ * \brief Self Reception Disable
+ * This bit defines whether FlexCAN is allowed to receive frames transmitted by itself. If this bit is asserted,
+ * frames transmitted by the module will not be stored in any MB, regardless if the MB is programmed with
+ * an ID that matches the transmitted frame, and no interrupt flag or interrupt signal will be generated due to
+ * the frame reception. This bit can be written only in Freeze mode because it is blocked by hardware in
+ * other modes.
+ * 0 Self reception enabled.
+ * 1 Self reception disabled.
  *
  * \param mode - set loop only mode?
  *
@@ -777,13 +779,14 @@ int FlexCAN::write (const CAN_message_t &msg)
 
         writeTxRegisters (msg, buffer);
         return 1;
-    } else {
-        // no mailboxes available. Try to buffer it
+    } 
+    // else {
+    //     // no mailboxes available. Try to buffer it
 
-        if (addToRingBuffer (txRing, msg) == true) {
-            return 1;
-        }
-    }
+    //     if (addToRingBuffer (txRing, msg) == true) {
+    //         return 1;
+    //     }
+    // }
 
   // could not send the frame!
 
