@@ -28,6 +28,7 @@
 #define SIZE_RX_BUFFER  512 // receive incoming ring buffer size
 #endif
 
+#define USE_TX_BUFFER 0 //Set to 0 to just write directly to the mailboxes, which gives more predictable results.
 #if !defined(SIZE_TX_BUFFER)
 #define SIZE_TX_BUFFER  16 // transmit ring buffer size
 #endif
@@ -159,7 +160,7 @@ protected:
 public:
   FlexCAN (uint8_t id = 0);
   void begin (uint32_t baud = 250000, const CAN_filter_t &mask = defaultMask, uint8_t txAlt = 0, uint8_t rxAlt = 0);
-
+  uint32_t baud_rate;
   void setFilter (const CAN_filter_t &filter, uint8_t n);
   bool getFilter (CAN_filter_t &filter, uint8_t n);
   void setMask (uint32_t mask, uint8_t n);

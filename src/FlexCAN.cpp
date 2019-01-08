@@ -314,12 +314,13 @@ void FlexCAN::begin (uint32_t baud, const CAN_filter_t &mask, uint8_t txAlt, uin
 
     if (autobaud) {
       baud = get_baud_rate();
-      Serial.print ("Baud rate for Can");
-      Serial.print (can_channel);
-      Serial.print (" set to ");
-      Serial.println (baud);
+      dbg_print ("Baud rate for Can");
+      dbg_print (can_channel);
+      dbg_print (" set to ");
+      dbg_println (baud);
     }
     else set_baud_rate(baud);
+    baud_rate = baud;
 
     dbg_println ("FlexCAN initialized properly");
 }
@@ -766,7 +767,7 @@ int FlexCAN::write (const CAN_message_t &msg)
     // find an available buffer
 
     int buffer = -1;
-
+    // look in the top mail boxes
     for (index = NUM_MAILBOXES - numTxMailboxes - 1; index < NUM_MAILBOXES; index++) {
         if ((FLEXCANb_MBn_CS(flexcanBase, index) & FLEXCAN_MB_CS_CODE_MASK) == FLEXCAN_MB_CS_CODE(FLEXCAN_MB_CODE_TX_INACTIVE)) {
             buffer = index;
@@ -775,21 +776,18 @@ int FlexCAN::write (const CAN_message_t &msg)
     }
 
     if (buffer > -1) {
-        dbg_println ("Writing a frame directly.");
-
         writeTxRegisters (msg, buffer);
         return 1;
     } 
-    // else {
-    //     // no mailboxes available. Try to buffer it
-
-    //     if (addToRingBuffer (txRing, msg) == true) {
-    //         return 1;
-    //     }
-    // }
+    else 
+    {
+      #if USE_TX_BUFFER
+        // no mailboxes available. Try to buffer it
+        if (addToRingBuffer (txRing, msg) == true) return 1;
+      #endif
+    }
 
   // could not send the frame!
-
   return 0;
 }
 
@@ -1168,7 +1166,6 @@ void FlexCAN::message_isr (void)
             // it seems filtering works by matching against the ID stored in the mailbox
             // so after a frame comes in we've got to refresh the ID field to be the filter ID and not the ID
             // that just came in.
-
             if (MBFilters[i].flags.extended) {
                 FLEXCANb_MBn_ID(flexcanBase, i) = (MBFilters[i].id & FLEXCAN_MB_ID_EXT_MASK);
             } else {
@@ -1368,8 +1365,8 @@ void FlexCAN::rx_warn_isr (void)
   uint32_t status = FLEXCANb_ESR1 (flexcanBase);
 
   // If many rx errors are occurring, it is likely the baud rate is off
-  Serial.print("RX Warn Interrupt. Setting new baudrate to ");
-  Serial.println(get_baud_rate());
+  //Serial.print("RX Warn Interrupt. Setting new baudrate to ");
+  //Serial.println(get_baud_rate());
   //CAN_ERR_CRTL 0x00000004U /* controller problems / data[1]    */
   /* error status of CAN-controller / data[1] */
   // CAN_ERR_CRTL_RX_WARNING 0x04 /* reached warning level for RX errors */
