@@ -63,9 +63,10 @@
  * bit 29	: error message frame flag (0 = data frame, 1 = error message)
  * bit 30	: remote transmission request flag (1 = rtr frame)
  * bit 31	: frame format flag (0 = standard 11 bit, 1 = extended 29 bit)
+ */
 
-
-#define CAN_ERR_DLC 8 /* dlc for error message frames */
+/* dlc for error message frames */
+#define CAN_ERR_DLC 8 
 
 /* error class (mask) in can_id */
 #define CAN_ERR_TX_TIMEOUT   0x00000001U /* TX timeout (by netdevice driver) */
